@@ -1,2 +1,5 @@
 requests
 sentence-transformers>=2.3.1
+fastapi
+uvicorn
+pydantic
