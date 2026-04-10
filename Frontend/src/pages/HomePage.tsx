@@ -1,4 +1,5 @@
 import { GitBranch, FileText, Upload, Brain, Activity, Settings, Bell, Search, ChartPie } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const HomePage = () => {
   return (
@@ -81,9 +82,9 @@ const HomePage = () => {
                 </p>
                 <div className="flex items-center justify-between mt-auto">
                   <div className="text-sm font-medium text-primary">Ready to parse</div>
-                  <button className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-sm font-medium transition-colors">
+                  <Link to="/github-analyzer" className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-sm font-medium transition-colors">
                     Analyze Link
-                  </button>
+                  </Link>
                 </div>
               </div>
 
@@ -99,9 +100,9 @@ const HomePage = () => {
                 </p>
                 <div className="flex items-center justify-between mt-auto">
                   <div className="text-sm font-medium text-secondary">PDF, DOCX, MD supported</div>
-                  <button className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-sm font-medium transition-colors">
+                  <Link to="/resume-upload" className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-sm font-medium transition-colors">
                     Upload File
-                  </button>
+                  </Link>
                 </div>
               </div>
               
