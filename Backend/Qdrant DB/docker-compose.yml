@@ -1,0 +1,12 @@
+version: '3.9'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: uplink_qdrant
+    ports:
+      - "6366:6333" # Map host 6366 to container 6333 (REST)
+      - "6334:6334" # gRPC
+    volumes:
+      - ./qdrant_storage:/qdrant/storage:z
+    restart: unless-stopped
