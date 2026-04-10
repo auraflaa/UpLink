@@ -52,9 +52,10 @@ class RAGPipelineAgent:
             # 2. LLM decides which files are most valuable
             t0 = self.time.perf_counter()
             print("[*] Requesting file selection from LLM...")
-            files_to_read = self.llm.select_key_files(full_tree)
+            # Limit selection to 7 core files for token efficiency
+            files_to_read = self.llm.select_key_files(full_tree)[:7]
             self.last_run_telemetry['file_selection_ms'] = (self.time.perf_counter() - t0) * 1000
-            print(f"[*] LLM selected {len(files_to_read)} files for summarisation.")
+            print(f"[*] LLM selected {len(files_to_read)} files for summarisation (Capped at 7).")
 
             if not files_to_read:
                 # Deterministic fallback
@@ -62,29 +63,26 @@ class RAGPipelineAgent:
                 files_to_read = [f for f in candidates if f in full_tree]
                 print(f"[!] LLM selection failed or returned empty. Using fallback: {files_to_read}")
 
-            # 3. Fetch file contents and summarise (PARALLEL)
+            # 3. Fetch file contents and summarise (BATCHED)
             t0 = self.time.perf_counter()
-            summaries = []
-            
-            from concurrent.futures import ThreadPoolExecutor
-            
-            def process_file(file_path):
-                print(f"[*] Fetching and summarising: {file_path}")
+            files_to_summarize = []
+            for file_path in files_to_read:
+                print(f"[*] Fetching: {file_path}")
                 content = self.scanner.get_file_content(repo_url, file_path)
                 if content:
-                    summary = self.llm.summarise_file(file_path, content)
-                    if summary:
-                        return {
-                            "filename": file_path,
-                            "summary": summary,
-                            "repo_url": repo_url
-                        }
-                return None
+                    files_to_summarize.append({"filename": file_path, "content": content})
 
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                results = list(executor.map(process_file, files_to_read))
-                summaries = [r for r in results if r]
-
+            print(f"[*] Sending batch summarisation request for {len(files_to_summarize)} files...")
+            batch_results = self.llm.summarise_batch(files_to_summarize)
+            
+            summaries = []
+            for file_path, summary in batch_results.items():
+                summaries.append({
+                    "filename": file_path,
+                    "summary": summary,
+                    "repo_url": repo_url
+                })
+            
             self.last_run_telemetry['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
 
             if not summaries:

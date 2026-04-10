@@ -68,6 +68,37 @@ class GroqLLMClient:
 
         return None
 
+    def summarise_batch(self, files: List[Dict[str, str]]) -> Dict[str, str]:
+        """
+        Summarizes multiple files in a single request to stay under RPM limits.
+        """
+        if not files:
+            return {}
+
+        prompt = "Summarize the following code files for a technical knowledge base. Respond ONLY with a JSON object where keys are filenames and values are concise technical summaries.\n\n"
+        for f in files:
+            prompt += f"--- FILE: {f['filename']} ---\n{f['content'][:3000]}\n\n"
+
+        messages = [
+            {"role": "system", "content": "You are a technical architect summarizing a codebase. You must return ONLY valid JSON."},
+            {"role": "user", "content": prompt}
+        ]
+
+        response = self.chat_completion(messages)
+        if not response:
+            return {}
+
+        try:
+            # Extract JSON from potential markdown blocks
+            start = response.find("{")
+            end = response.rfind("}") + 1
+            if start != -1 and end > 0:
+                return json.loads(response[start:end])
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"[!] Failed to parse batch summary JSON: {e}")
+        
+        return {}
+
     def summarise_file(self, filename: str, content: str) -> Optional[str]:
         """
         Produces a technical summary of a single source file.

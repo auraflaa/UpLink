@@ -140,7 +140,7 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         t0 = time.perf_counter()
         project_search_res = requests.post(
             f"{QDRANT_URL}/collections/{request.collection_name}/points/search",
-            json={"vector": query_vector, "limit": 10, "with_payload": True},
+            json={"vector": query_vector, "limit": 6, "with_payload": True},
             timeout=2
         )
         project_search = project_search_res.json().get("result", [])
