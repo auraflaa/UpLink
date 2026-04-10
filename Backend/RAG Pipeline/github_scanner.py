@@ -52,6 +52,18 @@ class GitHubScanner:
             raise ValueError(f"Cannot parse GitHub URL: '{repo_url}'")
         return f"{parts[-2]}/{parts[-1]}"
 
+    def get_repo_pushed_at(self, repo_url: str) -> Optional[str]:
+        """Fetches the last pushed timestamp of the repository."""
+        try:
+            repo_path = self._parse_repo_path(repo_url)
+            res = requests.get(f"{self.base_url}/{repo_path}", headers=self.headers, timeout=10)
+            if res.status_code == 200:
+                return res.json().get("pushed_at")
+        except Exception as e:
+            print(f"[!] Warning: Failed to fetch repo pushed_at timestamp: {e}")
+        return None
+
+
     def get_recursive_tree(self, repo_url: str, branch: str = "main") -> Dict:
         """
         Fetches the complete directory tree of a repository recursively.
