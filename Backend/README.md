@@ -17,8 +17,8 @@ To avoid conflicts during development, we have assigned the following fixed port
 ## 🚀 Recent Core Architecture Accomplishments
 
 1. **Unified Intelligence Hub (`llm_client.py`)**: 
-   - Consolidated all AI provider logic into a single, polymorphic client.
-   - Implemented dual-model routing: **Gemini 1.5 Flash** for high-speed ingestion and **Gemini 1.5 Pro** for conversational reasoning.
+   - Consolidated all AI provider logic (Gemini & Groq) into a single, polymorphic client.
+   - Implemented dual-model architecture: **Gemini 1.5 Flash/Pro** for reasoning-heavy tasks and **Llama 3 (via Groq)** for high-throughput stream processing.
 2. **Source-Agnostic Engine**:
    - Upgraded the RAG pipeline to handle generic `source_url` and `source_type` schemas.
    - Fully prepared for future **JIRA/Confluence** data source integrations.
