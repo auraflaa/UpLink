@@ -3,7 +3,7 @@ import time
 import json
 import sys
 
-SERVER_URL = "http://localhost:6399"
+SERVER_URL = "http://127.0.0.1:6399"
 TEST_REPO = "https://github.com/auraflaa/UpLink"
 COLLECTION = "rag_pipeline_verify"
 USER_ID = "test_engineer_01"
@@ -11,6 +11,22 @@ SESSION_ID = f"verify_{int(time.time())}"
 
 # Parse CLI flags:  --viz to include diagram generation
 RUN_VIZ = "--viz" in sys.argv
+
+def wait_for_server(url: str, timeout: int = 30):
+    print(f"[*] Waiting for RAG API to come online at {url}...")
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            r = requests.get(f"{url}/health", timeout=1)
+            if r.status_code == 200:
+                print("[✅] Server is READY.")
+                return True
+        except:
+            pass
+        time.sleep(1)
+        print(".", end="", flush=True)
+    print("\n[❌] Server pulse check failed. Make sure server.py is running.")
+    return False
 
 latencies = {}
 
@@ -32,6 +48,9 @@ def run():
 
     total_start = time.perf_counter()
 
+    if not wait_for_server(SERVER_URL):
+        return
+
     # ── Health ────────────────────────────────────────────────
     r, ms = timed_request("Health", "get", f"{SERVER_URL}/health")
     if r.status_code != 200:
@@ -41,7 +60,7 @@ def run():
 
     # ── Pre-analysis status ──────────────────────────────────
     r, ms = timed_request("Status (pre)", "get", f"{SERVER_URL}/status",
-        params={"repo_url": TEST_REPO, "collection_name": COLLECTION})
+        params={"source_url": TEST_REPO, "collection_name": COLLECTION})
     already_indexed = r.json()['indexed']
     print(f"[*] Pre-analysis index status: {already_indexed}  ({fmt(ms)})")
 
@@ -52,7 +71,7 @@ def run():
     else:
         print(f"\n[*] Submitting analysis request for: {TEST_REPO}")
         r, ms = timed_request("Analyze (submit)", "post", f"{SERVER_URL}/analyze",
-            json={"repo_url": TEST_REPO, "collection_name": COLLECTION})
+            json={"source_url": TEST_REPO, "source_type": "github", "collection_name": COLLECTION})
         print(f"[✅] Analysis accepted  ({fmt(ms)})")
 
         print("[*] Polling for indexing completion (max 120s)...")
@@ -61,7 +80,7 @@ def run():
         for i in range(24):
             time.sleep(5)
             r = requests.get(f"{SERVER_URL}/status",
-                params={"repo_url": TEST_REPO, "collection_name": COLLECTION})
+                params={"source_url": TEST_REPO, "collection_name": COLLECTION})
             indexed = r.json().get("indexed", False)
             elapsed_poll = int(time.perf_counter() - poll_start)
             print(f"     [{elapsed_poll}s] indexed={indexed}", end="\r")
@@ -110,7 +129,7 @@ def run():
     if RUN_VIZ:
         print(f"\n[*] Generating Mermaid diagram...")
         r, ms = timed_request("Viz (Mermaid)", "post", f"{SERVER_URL}/viz",
-            json={"repo_url": TEST_REPO, "collection_name": COLLECTION})
+            json={"source_url": TEST_REPO, "collection_name": COLLECTION})
         if r.status_code == 200:
             data = r.json()
             print(f"[✅] Mermaid generated  ({fmt(ms)}, {data['source_files']} sources)")

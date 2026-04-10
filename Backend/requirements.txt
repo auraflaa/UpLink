@@ -6,3 +6,4 @@ pydantic
 rich
 tinydb
 python-dotenv
+google-generativeai

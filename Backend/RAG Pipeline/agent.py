@@ -5,7 +5,7 @@ import uuid
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from github_scanner import GitHubScanner
-from llm_client import GroqLLMClient
+from llm_client import LLMClient
 
 load_dotenv()
 
@@ -13,27 +13,69 @@ load_dotenv()
 EMBEDDING_URL = f"http://127.0.0.1:{os.getenv('EMBEDDING_PORT', 6377)}/embed"
 QDRANT_URL = f"http://127.0.0.1:{os.getenv('QDRANT_PORT', 6366)}"
 
-
 class RAGPipelineAgent:
     """
-    Orchestrates the full agentic repository analysis pipeline:
-    Scan → Decide → Retrieve → Summarize → Index → Chat
+    Unified RAG Agent capable of analyzing multiple sources (GitHub, Jira).
+    Uses the Unified LLMClient for semantic intelligence.
     """
 
-    def __init__(self, github_token: Optional[str] = None, groq_api_key: Optional[str] = None):
+    def __init__(self, github_token: Optional[str] = None):
         import time
         self.time = time
         self.scanner = GitHubScanner(token=github_token or os.getenv("GITHUB_TOKEN"))
-        self.llm = GroqLLMClient(api_key=groq_api_key or os.getenv("GROQ_API_KEY"))
-        self.last_run_telemetry = {}
+        self.llm = LLMClient()
+        self.last_run_telemetry = {
+            "tree_scan_ms": 0,
+            "file_selection_ms": 0,
+            "summarization_ms": 0,
+            "vector_indexing_ms": 0,
+            "total_ingestion_ms": 0
+        }
 
-    # ------------------------------------------------------------------ #
-    #  PHASE 1 — Repository Ingestion                                      #
-    # ------------------------------------------------------------------ #
-
-    def analyze_repository(self, repo_url: str, collection_name: str = "project_knowledge") -> Optional[List[Dict]]:
+    def validate_source(self, url: str, source_type: str = "github") -> bool:
         """
-        Full Agentic Workflow: Scan → Decide → Retrieve → Summarize → Index
+        Verifies if the source link is valid and reachable.
+        """
+        import re
+        if source_type == "github":
+            # 1. Regex check
+            github_pattern = r"^https?://github\.com/[\w\.-]+/[\w\.-]+/?$"
+            if not re.match(github_pattern, url.strip()):
+                return False
+            
+            # 2. Reachability check (HEAD request)
+            try:
+                # We use the scanner's token if available for better rate limits
+                headers = {"Authorization": f"token {os.getenv('GITHUB_TOKEN')}"} if os.getenv("GITHUB_TOKEN") else {}
+                res = requests.head(url.strip(), headers=headers, timeout=5, allow_redirects=True)
+                return res.status_code == 200
+            except:
+                return False
+        
+        elif source_type == "jira":
+            # Simple URL format check for Jira
+            return url.startswith("http") and "atlassian.net" in url
+            
+        return False
+
+    # ------------------------------------------------------------------ #
+    #  PHASE 1 — Source Ingestion                                         #
+    # ------------------------------------------------------------------ #
+
+    def analyze_source(self, source_url: str, source_type: str = "github", collection_name: str = "project_knowledge") -> Optional[List[Dict]]:
+        """
+        Orchestrates ingestion based on source type (GitHub, Jira, etc.)
+        """
+        if source_type == "github":
+            return self._analyze_github(source_url, collection_name)
+        elif source_type == "jira":
+            print(f"[*] Jira analysis for {source_url} is not yet implemented (Placeholder).")
+            return None
+        return None
+
+    def _analyze_github(self, repo_url: str, collection_name: str = "project_knowledge") -> Optional[List[Dict]]:
+        """
+        Full Agentic Workflow for GitHub: Scan → Decide → Retrieve → Summarize → Index
         """
         try:
             self.last_run_telemetry = {}
@@ -80,7 +122,7 @@ class RAGPipelineAgent:
                 summaries.append({
                     "filename": file_path,
                     "summary": summary,
-                    "repo_url": repo_url
+                    "source_url": repo_url  # Unified metadata key
                 })
             
             self.last_run_telemetry['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
@@ -96,9 +138,8 @@ class RAGPipelineAgent:
             t0 = self.time.perf_counter()
             print(f"[*] Indexing {len(summaries)} summaries into '{collection_name}'...")
             self._index_summaries(summaries, collection_name)
-            self.last_run_telemetry['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
+            self.last_run_telemetry['vector_indexing_ms'] = (self.time.perf_counter() - t0) * 1000
             
-            self.last_run_telemetry['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
             print(f"[✅] Analysis complete. RAG Pipeline indexed {len(summaries)} files.")
             return summaries
         except Exception as e:
@@ -106,14 +147,16 @@ class RAGPipelineAgent:
             import traceback
             traceback.print_exc()
             return None
+        finally:
+            self.last_run_telemetry['total_ingestion_ms'] = (self.time.perf_counter() - t_total) * 1000
 
-    def _delete_stale_entries(self, collection_name: str, repo_url: str):
-        """Removes old vector entries for a specific repo before re-indexing."""
+    def _delete_stale_entries(self, collection_name: str, source_url: str):
+        """Removes old vector entries for a specific source before re-indexing."""
         requests.post(f"{QDRANT_URL}/collections/{collection_name}/points/delete", json={
             "filter": {
-                "must": [{"key": "repo_url", "match": {"value": repo_url}}]
+                "must": [{"key": "source_url", "match": {"value": source_url}}]
             }
-        })  # Silently ignore if collection doesn't exist yet
+        })
 
     def _index_summaries(self, summaries: List[Dict], collection_name: str):
         """Batch-embeds summaries and upserts into Qdrant."""
@@ -162,19 +205,24 @@ class RAGPipelineAgent:
             {"role": "user", "content": query}
         ]
 
-        return self.llm.chat_completion(messages)
+        # Use the Pro model for reasoning during RAG chat
+        return self.llm.chat_completion(messages, model_type="chat")
 
-    def is_repo_indexed(self, collection_name: str, repo_url: str) -> bool:
-        """Checks if a repository already has indexed summaries in Qdrant."""
-        res = requests.post(f"{QDRANT_URL}/collections/{collection_name}/points/scroll", json={
-            "filter": {"must": [{"key": "repo_url", "match": {"value": repo_url}}]},
-            "limit": 1,
-            "with_payload": False,
-            "with_vector": False
-        })
-        if res.status_code != 200:
+    def is_indexed(self, collection_name: str, source_url: str) -> bool:
+        """Checks if a source already has indexed summaries in Qdrant."""
+        try:
+            res = requests.post(f"{QDRANT_URL}/collections/{collection_name}/points/scroll", json={
+                "filter": {"must": [{"key": "source_url", "match": {"value": source_url}}]},
+                "limit": 1,
+                "with_payload": False,
+                "with_vector": False
+            }, timeout=2)
+            if res.status_code != 200:
+                return False
+            return len(res.json().get("result", {}).get("points", [])) > 0
+        except Exception as e:
+            print(f"[!] Warning: Failed to check index status: {e}")
             return False
-        return len(res.json().get("result", {}).get("points", [])) > 0
 
     # ------------------------------------------------------------------ #
     #  PHASE 3 — Visualisation                                            #
