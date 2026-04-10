@@ -11,7 +11,7 @@ To avoid conflicts during development, we have assigned the following fixed port
 | **Qdrant Vector DB** | `6366` | REST / HTTP | Primary API for Python requests |
 | **Qdrant Vector DB** | `6334` | gRPC | High-performance internal API |
 | **Embedding Server** | `6377` | REST / HTTP | Standalone REST API for `all-mpnet-base-v2` |
-| **GitHub Analyser** | `6388` | REST / HTTP | [PLANNED] Repository scanning service |
+| **Mr. UpLinker** | `6399` | REST / HTTP | [IN PROGRESS] AI Agentic Repository Brain |
 
 ## 🚀 Recent Accomplishments
 
@@ -26,7 +26,7 @@ To avoid conflicts during development, we have assigned the following fixed port
 
 - `/Qdrant DB`: Docker configuration for the official Rust DB.
 - `/Embedding Service`: Standalone FastAPI server for `all-mpnet-base-v2` embeddings (CUDA-first).
-- `/GitHub Analyser`: [IN PROGRESS] Logic for fetching and processing repository data.
+- `/Mr UpLinker`: The "Brain" of UpLink (formerly GitHub Analyser). Handles agentic scans.
 - `/Document Parser`: Logic for analyzing resumes and project PDFs.
 - `/Test Scripts`: Centralized verification scripts for all services.
 
