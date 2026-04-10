@@ -123,6 +123,10 @@ class EventNormalizer:
                 "attendees": payload.get("attendees") or [],
                 "meeting_link": payload.get("meeting_link"),
                 "default_duration_minutes": payload.get("default_duration_minutes"),
+                "telegram_chat_id": payload.get("telegram_chat_id"),
+                "telegram_user_id": payload.get("telegram_user_id"),
+                "telegram_username": payload.get("telegram_username"),
+                "telegram_parse_mode": payload.get("telegram_parse_mode"),
                 "origin_payload": payload,
             },
         )

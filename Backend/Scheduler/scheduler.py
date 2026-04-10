@@ -17,6 +17,7 @@ from urllib import error, parse, request
 DEFAULT_HOST = os.getenv("SCHEDULER_HOST", "0.0.0.0")
 DEFAULT_PORT = int(os.getenv("SCHEDULER_PORT", "8002"))
 CREDENTIALS_PATH = os.path.join(os.path.dirname(__file__), "calendar_credentials.json")
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 
 
 def _parse_datetime(value: str | datetime | None) -> datetime:
@@ -57,6 +58,26 @@ def _normalize_offsets(value: Any) -> list[int]:
         raise ValueError("Unsupported reminder_offsets_minutes format.")
 
     return sorted({int(item) for item in values if int(item) >= 0}, reverse=True)
+
+
+def _load_dotenv(path: str) -> dict[str, str]:
+    if not os.path.exists(path):
+        return {}
+
+    loaded: dict[str, str] = {}
+    with open(path, "r", encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key:
+                loaded[key] = value
+
+    return loaded
 
 
 @dataclass(slots=True)
@@ -293,11 +314,80 @@ class SchedulerEngine:
         }
 
     def _send_telegram(self, job: ScheduledJob, action: ScheduledAction) -> dict[str, Any]:
-        return {
-            "channel": "telegram",
-            "status": "queued",
-            "message": self._build_message(job, action),
+        env_settings = _load_dotenv(ENV_PATH)
+        token = (
+            os.getenv("TELEGRAM_BOT_TOKEN")
+            or env_settings.get("TELEGRAM_BOT_TOKEN")
+            or env_settings.get("BOT_TOKEN")
+            or env_settings.get("TELEGRAM_TOKEN")
+        )
+        chat_id = (
+            job.metadata.get("telegram_chat_id")
+            or os.getenv("TELEGRAM_CHAT_ID")
+            or env_settings.get("TELEGRAM_CHAT_ID")
+            or env_settings.get("CHAT_ID")
+        )
+        parse_mode = (
+            str(job.metadata.get("telegram_parse_mode") or "").strip()
+            or os.getenv("TELEGRAM_PARSE_MODE")
+            or env_settings.get("TELEGRAM_PARSE_MODE")
+            or "Markdown"
+        )
+        message = self._build_telegram_message(job, action)
+
+        if not token:
+            return {
+                "channel": "telegram",
+                "status": "skipped",
+                "reason": "missing_telegram_bot_token",
+            }
+
+        if not chat_id:
+            return {
+                "channel": "telegram",
+                "status": "skipped",
+                "reason": "missing_telegram_chat_id",
+                "message": message,
+            }
+
+        payload = {
+            "chat_id": str(chat_id),
+            "text": message,
+            "parse_mode": parse_mode,
+            "disable_web_page_preview": True,
         }
+        req = request.Request(
+            url=f"https://api.telegram.org/bot{token}/sendMessage",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with request.urlopen(req, timeout=10) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+                telegram_result = response_payload.get("result", {})
+                return {
+                    "channel": "telegram",
+                    "status": "sent",
+                    "chat_id": str(chat_id),
+                    "message_id": telegram_result.get("message_id"),
+                }
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            return {
+                "channel": "telegram",
+                "status": "failed",
+                "chat_id": str(chat_id),
+                "reason": f"telegram_http_error: {detail}",
+            }
+        except error.URLError as exc:
+            return {
+                "channel": "telegram",
+                "status": "failed",
+                "chat_id": str(chat_id),
+                "reason": f"telegram_connection_error: {exc.reason}",
+            }
 
     def _sync_calendar(self, job: ScheduledJob) -> None:
         result = self._create_or_update_calendar_event(job)
@@ -456,6 +546,35 @@ class SchedulerEngine:
                 f"(in {action.offset_minutes} minutes)."
             )
         return f"{job.kind.title()} '{job.title}' is due now."
+
+    @staticmethod
+    def _build_telegram_message(job: ScheduledJob, action: ScheduledAction) -> str:
+        execute_at = job.execute_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        description = job.description.strip()
+        location = str(job.metadata.get("location") or "").strip()
+        resource_url = str(job.metadata.get("resource_url") or "").strip()
+
+        if action.action_type == "reminder":
+            heading = f"*Reminder*: {job.title}"
+            timing = f"In {action.offset_minutes} minutes"
+        else:
+            heading = f"*Due Now*: {job.title}"
+            timing = "Happening now"
+
+        lines = [
+            heading,
+            f"Type: {job.kind}",
+            f"When: {execute_at}",
+            f"Status: {timing}",
+        ]
+        if description:
+            lines.append(f"Details: {description}")
+        if location:
+            lines.append(f"Location: {location}")
+        if resource_url:
+            lines.append(f"Link: {resource_url}")
+
+        return "\n".join(lines)
 
 
 class SchedulerRequestHandler(BaseHTTPRequestHandler):
