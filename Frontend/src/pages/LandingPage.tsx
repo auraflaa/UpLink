@@ -68,7 +68,7 @@ export default function LandingPage() {
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-purple-200 dark:border-purple-500/20 mb-8 bg-purple-100/50 dark:bg-purple-500/10 backdrop-blur-sm text-purple-700 dark:text-purple-400"
           >
             <span className="w-2 h-2 rounded-full bg-purple-600 dark:bg-purple-400 animate-pulse"></span>
-            <span className="text-xs font-bold tracking-[0.2em] uppercase">UpLink OS</span>
+            <span className="text-xs font-bold tracking-[0.2em] uppercase">UpLink</span>
           </motion.div>
           
           <motion.h1 
@@ -170,7 +170,7 @@ export default function LandingPage() {
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 italic font-light">Start shipping.</span>
           </h2>
           <p className="text-lg md:text-xl text-neutral-400 leading-relaxed mb-10 max-w-xl mx-auto">
-            Join the developers building unstoppable momentum with UpLink OS.
+            Join the developers building unstoppable momentum with UpLink.
           </p>
           
           <Link to="/login" className="inline-flex items-center justify-center gap-3 text-lg font-bold bg-white text-neutral-900 hover:bg-neutral-200 px-8 py-4 rounded-full hover:scale-105 transition-all shadow-[0_0_40px_rgba(255,255,255,0.1)]">

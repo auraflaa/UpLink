@@ -1,11 +1,129 @@
-import { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { motion } from "motion/react";
 import { Database, Bot, Layout, Play, Share, Settings2, Plus, ArrowRight, FileText, Github, MessageSquare, Sparkles, CheckCircle2 } from "lucide-react";
+import {
+  ReactFlow,
+  MiniMap,
+  Controls,
+  Background,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  Connection,
+  Edge,
+  Node,
+  Handle,
+  Position
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+// Custom Node Components
+const DataSourceNode = ({ data }: { data: any }) => (
+  <div className="p-4 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm min-w-[150px]">
+    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
+    <div className="flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${data.colorClass}`}>
+        {data.icon}
+      </div>
+      <div>
+        <p className="text-sm font-bold text-neutral-900 dark:text-white">{data.label}</p>
+        <p className="text-xs text-neutral-500">{data.sublabel}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const AINode = ({ data }: { data: any }) => (
+  <div className="p-5 rounded-2xl border-2 border-purple-500 bg-white dark:bg-neutral-900 shadow-md min-w-[250px]">
+    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-purple-500" />
+    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-purple-500" />
+    <div className="flex items-center gap-4 mb-3">
+      <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+        <Bot className="w-6 h-6" />
+      </div>
+      <div>
+        <p className="text-base font-bold text-neutral-900 dark:text-white">{data.label}</p>
+        <p className="text-sm text-neutral-500">AI Function</p>
+      </div>
+    </div>
+  </div>
+);
+
+const OutputNode = ({ data }: { data: any }) => (
+  <div className="p-4 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm min-w-[200px]">
+    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-pink-500" />
+    <div className="flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl bg-pink-100 dark:bg-pink-500/20 text-pink-600 dark:text-pink-400 flex items-center justify-center">
+        <MessageSquare className="w-5 h-5" />
+      </div>
+      <div>
+        <p className="text-sm font-bold text-neutral-900 dark:text-white">{data.label}</p>
+        <p className="text-xs text-neutral-500">Interactive UI</p>
+      </div>
+    </div>
+  </div>
+);
+
+const nodeTypes = {
+  dataSource: DataSourceNode,
+  aiFunction: AINode,
+  output: OutputNode,
+};
+
+const initialNodes: Node[] = [
+  {
+    id: 'data-1',
+    type: 'dataSource',
+    position: { x: 100, y: 50 },
+    data: { 
+      label: 'Resume', 
+      sublabel: 'PDF Document',
+      icon: <FileText className="w-5 h-5" />,
+      colorClass: 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400'
+    },
+  },
+  {
+    id: 'data-2',
+    type: 'dataSource',
+    position: { x: 350, y: 50 },
+    data: { 
+      label: 'GitHub', 
+      sublabel: 'API Source',
+      icon: <Github className="w-5 h-5" />,
+      colorClass: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+    },
+  },
+  {
+    id: 'ai-node',
+    type: 'aiFunction',
+    position: { x: 200, y: 200 },
+    data: { label: 'Career Gap Analyzer' },
+  },
+  {
+    id: 'output-node',
+    type: 'output',
+    position: { x: 225, y: 350 },
+    data: { label: 'Recruiter Chatbot' },
+  },
+];
+
+const initialEdges: Edge[] = [
+  { id: 'e1', source: 'data-1', target: 'ai-node', animated: true },
+  { id: 'e2', source: 'data-2', target: 'ai-node', animated: true },
+  { id: 'e3', source: 'ai-node', target: 'output-node', animated: true },
+];
 
 export default function BuilderPage() {
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<string | null>("ai-node");
   const [isPublishing, setIsPublishing] = useState(false);
   const [published, setPublished] = useState(false);
+
+  const onConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges],
+  );
 
   const handlePublish = () => {
     setIsPublishing(true);
@@ -13,6 +131,14 @@ export default function BuilderPage() {
       setIsPublishing(false);
       setPublished(true);
     }, 2000);
+  };
+
+  const onNodeClick = (_: React.MouseEvent, node: Node) => {
+    setSelectedNode(node.id);
+  };
+
+  const onPaneClick = () => {
+    setSelectedNode(null);
   };
 
   return (
@@ -103,89 +229,23 @@ export default function BuilderPage() {
           </div>
         </div>
 
-        {/* Middle: Canvas */}
-        <div className="lg:col-span-6 bg-neutral-100 dark:bg-neutral-950/50 border border-neutral-200 dark:border-neutral-800 rounded-3xl relative overflow-hidden flex items-center justify-center shadow-inner">
-          {/* Dotted Background */}
-          <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] dark:bg-[radial-gradient(#404040_1px,transparent_1px)] [background-size:24px_24px] opacity-50"></div>
-          
-          {/* Mock Pipeline */}
-          <div className="relative z-10 flex flex-col items-center gap-6 w-full max-w-md px-6">
-            
-            {/* Input Layer */}
-            <div className="flex gap-4 w-full justify-center">
-              <div 
-                onClick={() => setSelectedNode("data-1")}
-                className={`p-4 rounded-2xl border-2 bg-white dark:bg-neutral-900 shadow-sm cursor-pointer transition-all ${selectedNode === "data-1" ? "border-blue-500 ring-4 ring-blue-500/20" : "border-neutral-200 dark:border-neutral-700 hover:border-blue-400"}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center"><FileText className="w-5 h-5" /></div>
-                  <div>
-                    <p className="text-sm font-bold text-neutral-900 dark:text-white">Resume</p>
-                    <p className="text-xs text-neutral-500">PDF Document</p>
-                  </div>
-                </div>
-              </div>
-
-              <div 
-                onClick={() => setSelectedNode("data-2")}
-                className={`p-4 rounded-2xl border-2 bg-white dark:bg-neutral-900 shadow-sm cursor-pointer transition-all ${selectedNode === "data-2" ? "border-emerald-500 ring-4 ring-emerald-500/20" : "border-neutral-200 dark:border-neutral-700 hover:border-emerald-400"}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center"><Github className="w-5 h-5" /></div>
-                  <div>
-                    <p className="text-sm font-bold text-neutral-900 dark:text-white">GitHub</p>
-                    <p className="text-xs text-neutral-500">API Source</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Arrow Down */}
-            <div className="flex gap-16 text-neutral-300 dark:text-neutral-600">
-              <div className="w-px h-8 bg-current"></div>
-              <div className="w-px h-8 bg-current"></div>
-            </div>
-
-            {/* AI Layer */}
-            <div 
-              onClick={() => setSelectedNode("ai-node")}
-              className={`w-full p-5 rounded-2xl border-2 bg-white dark:bg-neutral-900 shadow-md cursor-pointer transition-all ${selectedNode === "ai-node" ? "border-purple-500 ring-4 ring-purple-500/20" : "border-neutral-200 dark:border-neutral-700 hover:border-purple-400"}`}
-            >
-              <div className="flex items-center gap-4 mb-3">
-                <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center"><Bot className="w-6 h-6" /></div>
-                <div>
-                  <p className="text-base font-bold text-neutral-900 dark:text-white">Career Gap Analyzer</p>
-                  <p className="text-sm text-neutral-500">AI Function</p>
-                </div>
-              </div>
-              <div className="bg-neutral-50 dark:bg-neutral-950 rounded-xl p-3 border border-neutral-100 dark:border-neutral-800">
-                <p className="text-xs text-neutral-600 dark:text-neutral-400 font-mono line-clamp-2">
-                  "Compare my resume and GitHub repos against entry-level React developer roles. Highlight missing skills."
-                </p>
-              </div>
-            </div>
-
-            {/* Arrow Down */}
-            <div className="w-px h-8 bg-neutral-300 dark:bg-neutral-600"></div>
-
-            {/* Output Layer */}
-            <div 
-              onClick={() => setSelectedNode("output-node")}
-              className={`w-full p-4 rounded-2xl border-2 bg-white dark:bg-neutral-900 shadow-sm cursor-pointer transition-all ${selectedNode === "output-node" ? "border-pink-500 ring-4 ring-pink-500/20" : "border-neutral-200 dark:border-neutral-700 hover:border-pink-400"}`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-pink-100 dark:bg-pink-500/20 text-pink-600 dark:text-pink-400 flex items-center justify-center"><MessageSquare className="w-5 h-5" /></div>
-                  <div>
-                    <p className="text-sm font-bold text-neutral-900 dark:text-white">Recruiter Chatbot</p>
-                    <p className="text-xs text-neutral-500">Interactive UI</p>
-                  </div>
-                </div>
-                <ArrowRight className="w-5 h-5 text-neutral-400" />
-              </div>
-            </div>
-
-          </div>
+        {/* Middle: Canvas (React Flow) */}
+        <div className="lg:col-span-6 bg-neutral-100 dark:bg-neutral-950/50 border border-neutral-200 dark:border-neutral-800 rounded-3xl relative overflow-hidden shadow-inner">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            nodeTypes={nodeTypes}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            fitView
+            className="bg-neutral-100 dark:bg-neutral-950/50"
+          >
+            <Background color="#888" gap={24} />
+            <Controls className="bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 fill-neutral-700 dark:fill-neutral-300" />
+          </ReactFlow>
         </div>
 
         {/* Right Sidebar: Configuration */}
@@ -193,6 +253,12 @@ export default function BuilderPage() {
           <h3 className="font-semibold text-neutral-900 dark:text-white mb-6 flex items-center gap-2">
             <Settings2 className="w-5 h-5 text-purple-500" /> Configuration
           </h3>
+
+          {!selectedNode && (
+            <div className="text-center text-neutral-500 dark:text-neutral-400 mt-10">
+              Select a node to configure it.
+            </div>
+          )}
 
           {selectedNode === "ai-node" && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
