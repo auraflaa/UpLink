@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 """
 Scraper integration and contract test helper for UpLink.
 
@@ -267,4 +265,3 @@ if __name__ == "__main__":
         print_header("Scraper Test Failed")
         print(str(exc))
         sys.exit(1)
->>>>>>> 6043e892c2bb5d8b60258a7e05b06a6150858705
