@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
 import { ArrowRight, Github, Mail, Sparkles } from "lucide-react";
 import { ThemeToggle } from "../components/theme-toggle";
+import { signInWithPopup } from "firebase/auth";
+import { auth, googleProvider } from "../lib/firebase";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -12,10 +14,26 @@ export default function LoginPage() {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Mock login delay
+    // Mock login delay for email
     setTimeout(() => {
       navigate("/home");
+      setIsLoading(false);
     }, 1500);
+  };
+
+  const handleGoogleLogin = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      console.log("Logged in with Google:", result.user);
+      navigate("/home");
+    } catch (error: any) {
+      console.error("Error signing in with Google:", error);
+      alert("Login Error: " + error.message + "\n\n(Make sure 'Google' is enabled under Authentication in your Firebase console!)");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const containerVariants = {
@@ -109,6 +127,7 @@ export default function LoginPage() {
 
           <motion.div variants={itemVariants} className="space-y-4 mb-8">
             <motion.button 
+              type="button"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleLogin}
@@ -118,9 +137,10 @@ export default function LoginPage() {
               Continue with GitHub
             </motion.button>
             <motion.button 
+              type="button"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={handleLogin}
+              onClick={handleGoogleLogin}
               className="w-full flex items-center justify-center gap-3 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white py-3.5 rounded-xl transition-all font-medium border border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 shadow-sm hover:shadow-md dark:shadow-none dark:hover:shadow-[0_0_20px_rgba(255,255,255,0.05)]"
             >
               <Mail className="w-5 h-5" />
