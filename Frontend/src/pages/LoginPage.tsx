@@ -5,17 +5,20 @@ import { ArrowRight, Mail, Sparkles } from "lucide-react";
 import { ThemeToggle } from "../components/theme-toggle";
 import { auth, googleProvider } from "../lib/firebase";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { useToast } from "../components/ui/use-toast";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
+  const { success, error } = useToast();
 
   const handleEmailLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     // Mock email login delay
     setTimeout(() => {
+      success("Logged in successfully");
       navigate("/home");
     }, 1500);
   };
@@ -25,9 +28,11 @@ export default function LoginPage() {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
+      success("Google authentication successful");
       navigate("/home");
-    } catch (error) {
-      console.error("Google login failed:", error);
+    } catch (err: any) {
+      console.error("Google login failed:", err);
+      error("Authentication failed. Please try again.");
       setIsLoading(false);
     }
   };

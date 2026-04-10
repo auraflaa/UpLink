@@ -79,14 +79,21 @@ class LLMClient:
             system_msg = next((m['content'] for m in messages if m['role'] == 'system'), None)
             user_msgs = [m for m in messages if m['role'] != 'system']
             
-            # Use the official system_instruction parameter
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=system_msg
-            )
-            
-            # Format history for Gemini
-            prompt = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in user_msgs])
+            # Use the official system_instruction parameter if supported
+            if "gemma" in model_name.lower():
+                # Open-weight Gemma models often reject the strict system_instruction payload
+                model = genai.GenerativeModel(model_name=model_name)
+                prompt = ""
+                if system_msg:
+                    prompt += f"System Instructions: {system_msg}\n\n"
+                prompt += "\n".join([f"{m['role'].upper()}: {m['content']}" for m in user_msgs])
+            else:
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=system_msg
+                )
+                # Format history for Gemini
+                prompt = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in user_msgs])
             
             response = model.generate_content(
                 prompt, 

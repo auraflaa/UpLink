@@ -24,6 +24,7 @@ CREDENTIALS_PATH = os.path.join(os.path.dirname(__file__), "calendar_credentials
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 TELEGRAM_LINKS_PATH = os.path.join(os.path.dirname(__file__), "telegram_links.json")
 TELEGRAM_LINK_TOKENS_PATH = os.path.join(os.path.dirname(__file__), "telegram_link_tokens.json")
+DEFAULT_DEADLINE_REMINDER_OFFSETS = [10080, 4320, 1440]
 
 
 def _parse_datetime(value: str | datetime | None) -> datetime:
@@ -53,7 +54,7 @@ def _as_string_list(value: Any, fallback: list[str]) -> list[str]:
 
 def _normalize_offsets(value: Any) -> list[int]:
     if value is None:
-        return [60, 15]
+        return list(DEFAULT_DEADLINE_REMINDER_OFFSETS)
     if isinstance(value, int):
         values = [value]
     elif isinstance(value, list):
@@ -63,7 +64,8 @@ def _normalize_offsets(value: Any) -> list[int]:
     else:
         raise ValueError("Unsupported reminder_offsets_minutes format.")
 
-    return sorted({int(item) for item in values if int(item) >= 0}, reverse=True)
+    normalized = sorted({int(item) for item in values if int(item) >= 0}, reverse=True)
+    return normalized or list(DEFAULT_DEADLINE_REMINDER_OFFSETS)
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -285,6 +287,7 @@ class ScheduledAction:
     action_type: str
     scheduled_for: datetime
     offset_minutes: int = 0
+    revision: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -293,6 +296,7 @@ class ScheduledAction:
             "action_type": self.action_type,
             "scheduled_for": _isoformat(self.scheduled_for),
             "offset_minutes": self.offset_minutes,
+            "revision": self.revision,
         }
 
 
@@ -305,12 +309,16 @@ class ScheduledJob:
     description: str = ""
     end_at: datetime | None = None
     channels: list[str] = field(default_factory=lambda: ["telegram", "calendar"])
-    reminder_offsets_minutes: list[int] = field(default_factory=lambda: [60, 15])
+    reminder_offsets_minutes: list[int] = field(
+        default_factory=lambda: list(DEFAULT_DEADLINE_REMINDER_OFFSETS)
+    )
     source: str = "event_handler"
     status: str = "scheduled"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = field(default_factory=dict)
     history: list[dict[str, Any]] = field(default_factory=list)
+    schedule_key: str | None = None
+    revision: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -327,6 +335,8 @@ class ScheduledJob:
             "created_at": _isoformat(self.created_at),
             "metadata": self.metadata,
             "history": self.history,
+            "schedule_key": self.schedule_key,
+            "revision": self.revision,
         }
 
 
@@ -335,6 +345,7 @@ class SchedulerEngine:
 
     def __init__(self) -> None:
         self.jobs: dict[str, ScheduledJob] = {}
+        self.job_keys: dict[str, str] = {}
         self.telegram_links = TelegramLinkStore()
         self._queue: list[tuple[float, int, ScheduledAction]] = []
         self._sequence = 0
@@ -357,27 +368,53 @@ class SchedulerEngine:
         end_at = payload.get("end_at")
         channels = _as_string_list(payload.get("channels"), ["telegram", "calendar"])
         reminder_offsets = _normalize_offsets(payload.get("reminder_offsets_minutes"))
-
-        job = ScheduledJob(
-            job_id=str(payload.get("job_id") or uuid.uuid4()),
-            title=title,
-            kind=kind,
-            description=str(payload.get("description") or "").strip(),
-            execute_at=execute_at,
-            end_at=_parse_datetime(end_at) if end_at else None,
-            channels=channels,
-            reminder_offsets_minutes=reminder_offsets,
-            source=str(payload.get("source") or "event_handler"),
-            metadata=dict(payload.get("metadata") or {}),
-        )
+        metadata = dict(payload.get("metadata") or {})
+        schedule_key = self._derive_schedule_key(payload, metadata)
 
         with self._wakeup:
+            existing_job = self._resolve_existing_job(payload, schedule_key)
+            if existing_job:
+                updated_job = self._update_existing_job(
+                    existing_job=existing_job,
+                    payload=payload,
+                    title=title,
+                    kind=kind,
+                    execute_at=execute_at,
+                    end_at=_parse_datetime(end_at) if end_at else None,
+                    channels=channels,
+                    reminder_offsets=reminder_offsets,
+                    metadata=metadata,
+                    schedule_key=schedule_key,
+                )
+                self._wakeup.notify_all()
+                if "calendar" in updated_job.channels:
+                    self._sync_calendar(updated_job)
+                return {
+                    "status": "updated",
+                    "job": updated_job.to_dict(),
+                }
+
+            if schedule_key:
+                metadata["schedule_key"] = schedule_key
+
+            job = ScheduledJob(
+                job_id=str(payload.get("job_id") or uuid.uuid4()),
+                title=title,
+                kind=kind,
+                description=str(payload.get("description") or "").strip(),
+                execute_at=execute_at,
+                end_at=_parse_datetime(end_at) if end_at else None,
+                channels=channels,
+                reminder_offsets_minutes=reminder_offsets,
+                source=str(payload.get("source") or "event_handler"),
+                metadata=metadata,
+                schedule_key=schedule_key,
+            )
+
             self.jobs[job.job_id] = job
-            self._enqueue_action(job, "execute", job.execute_at)
-            for offset in reminder_offsets:
-                reminder_time = job.execute_at - timedelta(minutes=offset)
-                if reminder_time > datetime.now(timezone.utc):
-                    self._enqueue_action(job, "reminder", reminder_time, offset_minutes=offset)
+            if schedule_key:
+                self.job_keys[schedule_key] = job.job_id
+            self._enqueue_job_actions(job)
 
             job.history.append(
                 {
@@ -413,6 +450,8 @@ class SchedulerEngine:
             if not job:
                 raise KeyError(job_id)
             job.status = "cancelled"
+            if job.schedule_key:
+                self.job_keys.pop(job.schedule_key, None)
             job.history.append(
                 {
                     "timestamp": _isoformat(datetime.now(timezone.utc)),
@@ -505,7 +544,9 @@ class SchedulerEngine:
             due_source = {
                 "issue_key": issue_key,
                 "project_key": project_key,
-                "default_reminder_offsets_minutes": payload.get("reminder_offsets_minutes") or [1440, 60, 15],
+                "default_reminder_offsets_minutes": (
+                    payload.get("reminder_offsets_minutes") or list(DEFAULT_DEADLINE_REMINDER_OFFSETS)
+                ),
             }
             schedule_result = self.schedule_jira_issue_due_date(due_source, issue_payload=created_issue)
             created_issue["scheduled_due_date"] = schedule_result
@@ -676,9 +717,83 @@ class SchedulerEngine:
             action_type=action_type,
             scheduled_for=scheduled_for,
             offset_minutes=offset_minutes,
+            revision=job.revision,
         )
         heapq.heappush(self._queue, (scheduled_for.timestamp(), self._sequence, action))
         self._sequence += 1
+
+    def _enqueue_job_actions(self, job: ScheduledJob) -> None:
+        self._enqueue_action(job, "execute", job.execute_at)
+        for offset in job.reminder_offsets_minutes:
+            reminder_time = job.execute_at - timedelta(minutes=offset)
+            if reminder_time > datetime.now(timezone.utc):
+                self._enqueue_action(job, "reminder", reminder_time, offset_minutes=offset)
+
+    def _resolve_existing_job(self, payload: dict[str, Any], schedule_key: str | None) -> ScheduledJob | None:
+        explicit_job_id = str(payload.get("job_id") or "").strip()
+        if explicit_job_id:
+            existing = self.jobs.get(explicit_job_id)
+            if existing and existing.status != "cancelled":
+                return existing
+
+        if schedule_key:
+            existing_job_id = self.job_keys.get(schedule_key)
+            if existing_job_id:
+                existing = self.jobs.get(existing_job_id)
+                if existing and existing.status != "cancelled":
+                    return existing
+
+        return None
+
+    def _update_existing_job(
+        self,
+        existing_job: ScheduledJob,
+        payload: dict[str, Any],
+        title: str,
+        kind: str,
+        execute_at: datetime,
+        end_at: datetime | None,
+        channels: list[str],
+        reminder_offsets: list[int],
+        metadata: dict[str, Any],
+        schedule_key: str | None,
+    ) -> ScheduledJob:
+        previous_schedule_key = existing_job.schedule_key
+        merged_metadata = dict(existing_job.metadata)
+        merged_metadata.update(metadata)
+
+        if previous_schedule_key and not schedule_key:
+            schedule_key = previous_schedule_key
+        if schedule_key:
+            merged_metadata["schedule_key"] = schedule_key
+
+        existing_job.title = title
+        existing_job.kind = kind
+        existing_job.description = str(payload.get("description") or "").strip()
+        existing_job.execute_at = execute_at
+        existing_job.end_at = end_at
+        existing_job.channels = channels
+        existing_job.reminder_offsets_minutes = reminder_offsets
+        existing_job.source = str(payload.get("source") or existing_job.source or "event_handler")
+        existing_job.status = "scheduled"
+        existing_job.metadata = merged_metadata
+        existing_job.revision += 1
+        existing_job.schedule_key = schedule_key
+
+        if previous_schedule_key and previous_schedule_key != schedule_key:
+            self.job_keys.pop(previous_schedule_key, None)
+        if schedule_key:
+            self.job_keys[schedule_key] = existing_job.job_id
+
+        self._enqueue_job_actions(existing_job)
+        existing_job.history.append(
+            {
+                "timestamp": _isoformat(datetime.now(timezone.utc)),
+                "status": "updated",
+                "message": "Job schedule updated by scheduler.",
+            }
+        )
+        return existing_job
 
     def _run(self) -> None:
         while True:
@@ -706,6 +821,8 @@ class SchedulerEngine:
                 return {"status": "ignored", "reason": "job_missing", "action": action.to_dict()}
             if job.status == "cancelled":
                 return {"status": "ignored", "reason": "job_cancelled", "action": action.to_dict()}
+            if action.revision != job.revision:
+                return {"status": "ignored", "reason": "stale_action", "action": action.to_dict()}
 
         delivery_results: list[dict[str, Any]] = []
         if "telegram" in job.channels:
@@ -1107,7 +1224,7 @@ class SchedulerEngine:
             "description": f"Jira issue {issue_key} due date reminder.",
             "execute_at": _isoformat(due_datetime),
             "channels": ["telegram"],
-            "reminder_offsets_minutes": default_offsets or [1440, 60, 15],
+            "reminder_offsets_minutes": default_offsets or list(DEFAULT_DEADLINE_REMINDER_OFFSETS),
             "source": "jira",
             "metadata": {
                 "jira_issue_id": issue.get("id"),
@@ -1502,7 +1619,7 @@ class SchedulerEngine:
             return (
                 f"Reminder: {job.kind} '{job.title}' starts at "
                 f"{job.execute_at.astimezone(timezone.utc).isoformat()} "
-                f"(in {action.offset_minutes} minutes)."
+                f"(in {SchedulerEngine._format_offset_minutes(action.offset_minutes)})."
             )
         return f"{job.kind.title()} '{job.title}' is due now."
 
@@ -1512,10 +1629,13 @@ class SchedulerEngine:
         description = job.description.strip()
         location = str(job.metadata.get("location") or "").strip()
         resource_url = str(job.metadata.get("resource_url") or "").strip()
+        platform = str(job.metadata.get("platform") or "").strip()
+        organizer = str(job.metadata.get("organizer") or "").strip()
+        deadline = str(job.metadata.get("deadline") or "").strip()
 
         if action.action_type == "reminder":
             heading = f"*Reminder*: {job.title}"
-            timing = f"In {action.offset_minutes} minutes"
+            timing = f"In {SchedulerEngine._format_offset_minutes(action.offset_minutes)}"
         else:
             heading = f"*Due Now*: {job.title}"
             timing = "Happening now"
@@ -1526,6 +1646,12 @@ class SchedulerEngine:
             f"When: {execute_at}",
             f"Status: {timing}",
         ]
+        if platform:
+            lines.append(f"Platform: {platform}")
+        if organizer:
+            lines.append(f"Organizer: {organizer}")
+        if deadline:
+            lines.append(f"Deadline: {deadline}")
         if description:
             lines.append(f"Details: {description}")
         if location:
@@ -1534,6 +1660,45 @@ class SchedulerEngine:
             lines.append(f"Link: {resource_url}")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_offset_minutes(offset_minutes: int) -> str:
+        if offset_minutes % 10080 == 0:
+            weeks = offset_minutes // 10080
+            return f"{weeks} week" if weeks == 1 else f"{weeks} weeks"
+        if offset_minutes % 1440 == 0:
+            days = offset_minutes // 1440
+            return f"{days} day" if days == 1 else f"{days} days"
+        if offset_minutes % 60 == 0:
+            hours = offset_minutes // 60
+            return f"{hours} hour" if hours == 1 else f"{hours} hours"
+        return f"{offset_minutes} minutes"
+
+    @staticmethod
+    def _derive_schedule_key(payload: dict[str, Any], metadata: dict[str, Any]) -> str | None:
+        explicit_schedule_key = str(
+            payload.get("schedule_key") or metadata.get("schedule_key") or ""
+        ).strip()
+        if explicit_schedule_key:
+            return explicit_schedule_key
+
+        source_id = str(metadata.get("source_id") or "").strip()
+        if source_id:
+            return f"scrape:source_id:{source_id}"
+
+        event_url = str(metadata.get("event_url") or metadata.get("resource_url") or "").strip()
+        if event_url:
+            return f"scrape:event_url:{event_url}"
+
+        jira_issue_key = str(metadata.get("jira_issue_key") or "").strip()
+        if jira_issue_key:
+            return f"jira:issue:{jira_issue_key}"
+
+        calendar_event_id = str(metadata.get("calendar_event_id") or "").strip()
+        if calendar_event_id:
+            return f"calendar:event:{calendar_event_id}"
+
+        return None
 
 
 class SchedulerRequestHandler(BaseHTTPRequestHandler):

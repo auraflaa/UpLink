@@ -110,7 +110,16 @@ class RAGPipelineAgent:
             }
             
             try:
-                print(f"\n[🚀] [PARALLEL] GitHub Pipeline starting analysis: {repo_url}")
+                print(f"\n[START] [PARALLEL] GitHub Pipeline starting analysis: {repo_url}")
+
+                # --- SMART CACHE CHECK ---
+                last_embedded_utc = self._get_last_embedded_time(repo_url)
+                pushed_at = self.scanner.get_repo_pushed_at(repo_url)
+                if last_embedded_utc and pushed_at:
+                    if pushed_at <= last_embedded_utc:
+                        print(f"[CACHE] SMART CACHE: GitHub repository {repo_url} has not changed since last indexed ({last_embedded_utc}). Skipping ingestion!")
+                        return []
+                        
 
                 # 1. Recursive tree scan
                 t0 = self.time.perf_counter()
@@ -171,10 +180,10 @@ class RAGPipelineAgent:
                 self._index_summaries(summaries, collection_name)
                 self.telemetry["github"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
                 
-                print(f"[✅] Analysis complete. RAG Pipeline indexed {len(summaries)} files.")
+                print(f"[OK] Analysis complete. RAG Pipeline indexed {len(summaries)} files.")
                 return summaries
             except Exception as e:
-                print(f"[❌] CRITICAL ERROR during analysis: {e}")
+                print(f"[FAIL] CRITICAL ERROR during analysis: {e}")
                 import traceback
                 traceback.print_exc()
                 return None
@@ -209,6 +218,15 @@ class RAGPipelineAgent:
                     
                 rag_doc = data.get("rag_document")
                 self.telemetry["jira"]['jira_fetch_ms'] = (self.time.perf_counter() - t0) * 1000
+
+                # --- SMART CACHE CHECK ---
+                last_embedded_utc = self._get_last_embedded_time(source_url)
+                ticket_updated_at = rag_doc.get("metadata", {}).get("updated")
+                if last_embedded_utc and ticket_updated_at:
+                    if ticket_updated_at <= last_embedded_utc:
+                        print(f"[⚡] SMART CACHE: Jira ticket {source_url} has not changed since last indexed ({last_embedded_utc}). Skipping ingestion!")
+                        return []
+                        
                 
                 # 2. High-Reasoning Summarization (Just like GitHub!)
                 print(f"[*] Sending Jira data for Gemini summarisation...")
@@ -246,6 +264,18 @@ class RAGPipelineAgent:
                 return None
             finally:
                 self.telemetry["jira"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
+
+    def _get_last_embedded_time(self, source_url: str) -> Optional[str]:
+        """Helper to quickly check the embedding registry for the last ingestion time."""
+        registry_path = "embedding_registry.json"
+        if os.path.exists(registry_path):
+            try:
+                with open(registry_path, "r", encoding="utf-8") as f:
+                    registry = json.load(f)
+                return registry.get(source_url, {}).get("last_embedded_utc")
+            except Exception:
+                pass
+        return None
 
     def _clear_previous_source_data(self, collection_name: str, source_type: str):
         """

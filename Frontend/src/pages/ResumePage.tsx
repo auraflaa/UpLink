@@ -1,12 +1,32 @@
 import React, { useState, useCallback } from "react";
 import { motion } from "motion/react";
 import { UploadCloud, FileText, CheckCircle, X, AlertCircle } from "lucide-react";
+import { useToast } from "../components/ui/use-toast";
 
 export default function ResumePage() {
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadComplete, setUploadComplete] = useState(false);
+  const { success, error } = useToast();
+
+  const validateAndSetFile = (selectedFile: File) => {
+    // Check file type
+    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    if (!validTypes.includes(selectedFile.type) && !selectedFile.name.endsWith('.pdf') && !selectedFile.name.endsWith('.docx') && !selectedFile.name.endsWith('.txt')) {
+      error("Unsupported file format. Please upload PDF, DOCX, or TXT.");
+      return;
+    }
+    
+    // Check max size (10MB)
+    if (selectedFile.size > 10 * 1024 * 1024) {
+      error("File is too large. Maximum size is 10MB.");
+      return;
+    }
+    
+    setFile(selectedFile);
+    setUploadComplete(false);
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -21,15 +41,13 @@ export default function ResumePage() {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFile(e.dataTransfer.files[0]);
-      setUploadComplete(false);
+      validateAndSetFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
-      setUploadComplete(false);
+      validateAndSetFile(e.target.files[0]);
     }
   };
 
@@ -40,6 +58,7 @@ export default function ResumePage() {
     setTimeout(() => {
       setIsUploading(false);
       setUploadComplete(true);
+      success("Document analyzed successfully.");
     }, 2000);
   };
 

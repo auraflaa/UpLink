@@ -13,6 +13,7 @@ from urllib import error, request
 DEFAULT_SCHEDULER_URL = os.getenv("SCHEDULER_URL", "http://127.0.0.1:8002")
 DEFAULT_EVENT_HANDLER_HOST = os.getenv("EVENT_HANDLER_HOST", "0.0.0.0")
 DEFAULT_EVENT_HANDLER_PORT = int(os.getenv("EVENT_HANDLER_PORT", "8003"))
+DEFAULT_DEADLINE_REMINDER_OFFSETS = [10080, 4320, 1440]
 
 
 def _parse_datetime(value: str | datetime | None) -> datetime:
@@ -56,7 +57,9 @@ class NormalizedScheduleRequest:
     description: str = ""
     end_at: datetime | None = None
     channels: list[str] = field(default_factory=lambda: ["telegram", "calendar"])
-    reminder_offsets_minutes: list[int] = field(default_factory=lambda: [60, 15])
+    reminder_offsets_minutes: list[int] = field(
+        default_factory=lambda: list(DEFAULT_DEADLINE_REMINDER_OFFSETS)
+    )
     source: str = "main_server"
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -94,6 +97,9 @@ class EventNormalizer:
             "scheduled_for",
             "occurs_at",
             "due_at",
+            "deadline",
+            "deadline_at",
+            "registration_deadline",
             "start_at",
             "start_time",
         )
@@ -122,9 +128,22 @@ class EventNormalizer:
             metadata={
                 "priority": payload.get("priority"),
                 "tags": _as_list(payload.get("tags")),
+                "platform": payload.get("platform"),
+                "source_id": payload.get("source_id"),
                 "resource": payload.get("resource"),
-                "resource_url": payload.get("resource_url") or payload.get("url"),
+                "resource_url": (
+                    payload.get("resource_url")
+                    or payload.get("registration_url")
+                    or payload.get("event_url")
+                    or payload.get("url")
+                ),
+                "event_url": payload.get("event_url"),
+                "registration_url": payload.get("registration_url"),
                 "location": payload.get("location"),
+                "mode": payload.get("mode"),
+                "organizer": payload.get("organizer"),
+                "prize": payload.get("prize"),
+                "deadline": payload.get("deadline") or payload.get("deadline_at"),
                 "timezone": payload.get("timezone"),
                 "calendar_id": payload.get("calendar_id"),
                 "calendar_event_id": payload.get("calendar_event_id"),
@@ -176,7 +195,7 @@ class EventNormalizer:
     @staticmethod
     def _normalize_offsets(raw_offsets: Any) -> list[int]:
         if raw_offsets is None:
-            return [60, 15]
+            return list(DEFAULT_DEADLINE_REMINDER_OFFSETS)
 
         if isinstance(raw_offsets, int):
             values = [raw_offsets]
@@ -195,7 +214,7 @@ class EventNormalizer:
             },
             reverse=True,
         )
-        return normalized or [15]
+        return normalized or list(DEFAULT_DEADLINE_REMINDER_OFFSETS)
 
 
 class SchedulerGateway:
