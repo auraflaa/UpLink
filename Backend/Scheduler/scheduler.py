@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import heapq
 import hashlib
 import json
@@ -63,6 +64,14 @@ def _normalize_offsets(value: Any) -> list[int]:
         raise ValueError("Unsupported reminder_offsets_minutes format.")
 
     return sorted({int(item) for item in values if int(item) >= 0}, reverse=True)
+
+
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _load_dotenv(path: str) -> dict[str, str]:
@@ -411,7 +420,185 @@ class SchedulerEngine:
                     "message": "Job cancelled manually.",
                 }
             )
+
+        if "calendar" in job.channels:
+            self._delete_calendar_event(job)
+
+        with self._lock:
             return {"status": "cancelled", "job": job.to_dict()}
+
+    def list_jira_projects(self) -> dict[str, Any]:
+        return self._jira_request("GET", "/rest/api/3/project/search")
+
+    def search_jira_issues(self, jql: str | None = None, max_results: int = 25) -> dict[str, Any]:
+        configured_project_key = str(_get_env_setting("JIRA_PROJECT_KEY") or "").strip()
+        default_jql = (
+            f"project = {configured_project_key} ORDER BY updated DESC"
+            if configured_project_key
+            else "updated >= -30d ORDER BY updated DESC"
+        )
+        effective_jql = str(jql or "").strip() or default_jql
+        query = parse.urlencode(
+            {
+                "jql": effective_jql,
+                "maxResults": max(1, min(int(max_results), 100)),
+                "fields": ",".join(
+                    [
+                        "summary",
+                        "description",
+                        "duedate",
+                        "priority",
+                        "status",
+                        "assignee",
+                        "project",
+                        "issuetype",
+                        "labels",
+                    ]
+                ),
+            }
+        )
+        return self._jira_request("GET", f"/rest/api/3/search/jql?{query}")
+
+    def create_jira_issue(self, payload: dict[str, Any]) -> dict[str, Any]:
+        project_key = str(
+            payload.get("jira_project_key")
+            or payload.get("project_key")
+            or _get_env_setting("JIRA_PROJECT_KEY")
+            or ""
+        ).strip()
+        summary = str(payload.get("summary") or payload.get("title") or "").strip()
+        issue_type = str(payload.get("issue_type") or payload.get("jira_issue_type") or "Task").strip()
+        description = str(payload.get("description") or "").strip()
+        due_date = str(payload.get("due_date") or payload.get("jira_due_date") or "").strip()
+        labels = payload.get("labels") or payload.get("jira_labels") or []
+
+        if not project_key:
+            raise ValueError("jira_project_key or project_key is required.")
+        if not summary:
+            raise ValueError("summary or title is required to create a Jira issue.")
+
+        fields: dict[str, Any] = {
+            "project": {"key": project_key},
+            "summary": summary,
+            "issuetype": {"name": issue_type},
+        }
+
+        if description:
+            fields["description"] = self._build_jira_description(description)
+        if due_date:
+            parsed_due = _parse_datetime(due_date)
+            fields["duedate"] = parsed_due.date().isoformat()
+        if labels:
+            fields["labels"] = [str(label).strip() for label in labels if str(label).strip()]
+
+        assignee = payload.get("assignee_account_id") or payload.get("jira_assignee_account_id")
+        if assignee:
+            fields["assignee"] = {"accountId": str(assignee)}
+
+        priority = payload.get("priority") or payload.get("jira_priority")
+        if priority:
+            fields["priority"] = {"name": str(priority)}
+
+        created_issue = self._jira_request("POST", "/rest/api/3/issue", payload={"fields": fields})
+        if _as_bool(payload.get("schedule_due_date"), default=True):
+            issue_key = str(created_issue.get("key") or "").strip()
+            due_source = {
+                "issue_key": issue_key,
+                "project_key": project_key,
+                "default_reminder_offsets_minutes": payload.get("reminder_offsets_minutes") or [1440, 60, 15],
+            }
+            schedule_result = self.schedule_jira_issue_due_date(due_source, issue_payload=created_issue)
+            created_issue["scheduled_due_date"] = schedule_result
+
+        return created_issue
+
+    def schedule_jira_issue_due_date(
+        self,
+        payload: dict[str, Any],
+        issue_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        issue = issue_payload or self._fetch_jira_issue(
+            issue_key=str(payload.get("issue_key") or payload.get("jira_issue_key") or "").strip(),
+            issue_id=str(payload.get("issue_id") or payload.get("jira_issue_id") or "").strip(),
+        )
+        normalized_job = self._build_schedule_payload_from_jira_issue(
+            issue,
+            default_offsets=payload.get("default_reminder_offsets_minutes"),
+        )
+        if not normalized_job:
+            raise ValueError("Jira issue does not have a due date to schedule.")
+        return self.schedule(normalized_job)
+
+    def analyze_jira_link(self, jira_url: str) -> dict[str, Any]:
+        parsed = self._detect_jira_target(jira_url)
+        entity_type = parsed.get("entity_type")
+        base_url = parsed["base_url"]
+
+        if entity_type == "issue":
+            issue = self._fetch_jira_issue_public(base_url=base_url, issue_key=parsed["issue_key"])
+            return {
+                "status": "completed",
+                "source_type": "jira",
+                "entity_type": "issue",
+                "input_url": jira_url,
+                "issue_key": issue.get("key"),
+                "analysis": self._summarise_jira_issue(issue),
+                "raw": issue,
+            }
+
+        if entity_type == "project":
+            project = self._fetch_jira_project_public(base_url=base_url, project_key=parsed["project_key"])
+            return {
+                "status": "completed",
+                "source_type": "jira",
+                "entity_type": "project",
+                "input_url": jira_url,
+                "project_key": project.get("key"),
+                "analysis": self._summarise_jira_project(project),
+                "raw": project,
+            }
+
+        return {
+            "status": "detected",
+            "source_type": "jira",
+            "entity_type": entity_type,
+            "input_url": jira_url,
+            "message": "Jira site detected. Detailed analysis currently supports project and issue links.",
+        }
+
+    def build_jira_rag_document(self, payload: dict[str, Any]) -> dict[str, Any]:
+        jira_url = str(payload.get("url") or payload.get("jira_url") or "").strip()
+        if not jira_url:
+            raise ValueError("url or jira_url is required.")
+
+        analysis = self.analyze_jira_link(jira_url)
+        entity_type = str(analysis.get("entity_type") or "unknown")
+        raw = analysis.get("raw") or {}
+
+        if entity_type == "issue":
+            rag_document = self._build_issue_rag_document(jira_url, raw)
+        elif entity_type == "project":
+            rag_document = self._build_project_rag_document(jira_url, raw)
+        else:
+            rag_document = {
+                "document_id": f"jira-site::{jira_url}",
+                "title": "Jira Site Link",
+                "content": analysis.get("message", "Jira site detected."),
+                "metadata": {
+                    "source_type": "jira",
+                    "entity_type": entity_type,
+                    "input_url": jira_url,
+                },
+            }
+
+        return {
+            "status": "completed",
+            "source_type": "jira",
+            "entity_type": entity_type,
+            "input_url": jira_url,
+            "analysis": analysis.get("analysis"),
+            "rag_document": rag_document,
+        }
 
     def trigger(self, job_id: str, action_type: str = "reminder") -> dict[str, Any]:
         with self._lock:
@@ -644,24 +831,23 @@ class SchedulerEngine:
         )
 
     def _create_or_update_calendar_event(self, job: ScheduledJob) -> dict[str, Any]:
-        credentials = self._load_calendar_credentials()
-        token = (
-            credentials.get("access_token")
-            or credentials.get("token")
-            or credentials.get("google_calendar_access_token")
-        )
-        calendar_id = str(job.metadata.get("calendar_id") or credentials.get("calendar_id") or "primary")
-
-        if not token:
+        credentials, token_error = self._resolve_google_calendar_access_token()
+        if token_error:
             return {
                 "channel": "calendar",
-                "status": "skipped",
-                "reason": "missing_access_token_in_calendar_credentials",
+                "status": "failed",
+                "reason": token_error,
             }
+
+        token = str(credentials.get("access_token") or "").strip()
+        calendar_id = str(job.metadata.get("calendar_id") or credentials.get("calendar_id") or "primary")
 
         payload = self._build_calendar_payload(job)
         encoded_calendar_id = parse.quote(calendar_id, safe="")
         existing_event_id = str(job.metadata.get("calendar_event_id") or "").strip()
+        query_params: dict[str, Any] = {}
+        if _as_bool(job.metadata.get("create_meet_link")):
+            query_params["conferenceDataVersion"] = 1
 
         if existing_event_id:
             method = "PATCH"
@@ -673,6 +859,9 @@ class SchedulerEngine:
         else:
             method = "POST"
             url = f"https://www.googleapis.com/calendar/v3/calendars/{encoded_calendar_id}/events"
+
+        if query_params:
+            url = f"{url}?{parse.urlencode(query_params)}"
 
         req = request.Request(
             url=url,
@@ -713,6 +902,512 @@ class SchedulerEngine:
                 "reason": f"google_calendar_connection_error: {exc.reason}",
             }
 
+    def _delete_calendar_event(self, job: ScheduledJob) -> dict[str, Any]:
+        existing_event_id = str(job.metadata.get("calendar_event_id") or "").strip()
+        if not existing_event_id:
+            result = {
+                "channel": "calendar",
+                "status": "skipped",
+                "reason": "missing_calendar_event_id",
+            }
+            job.history.append(
+                {
+                    "timestamp": _isoformat(datetime.now(timezone.utc)),
+                    "status": "calendar_delete",
+                    "message": f"No Google Calendar event ID stored for '{job.title}'.",
+                    "delivery_results": [result],
+                }
+            )
+            return result
+
+        credentials, token_error = self._resolve_google_calendar_access_token()
+        if token_error:
+            result = {
+                "channel": "calendar",
+                "status": "failed",
+                "reason": token_error,
+            }
+            job.history.append(
+                {
+                    "timestamp": _isoformat(datetime.now(timezone.utc)),
+                    "status": "calendar_delete",
+                    "message": f"Failed to delete Google Calendar event for '{job.title}'.",
+                    "delivery_results": [result],
+                }
+            )
+            return result
+
+        calendar_id = str(job.metadata.get("calendar_id") or credentials.get("calendar_id") or "primary")
+        encoded_calendar_id = parse.quote(calendar_id, safe="")
+        encoded_event_id = parse.quote(existing_event_id, safe="")
+        url = (
+            "https://www.googleapis.com/calendar/v3/calendars/"
+            f"{encoded_calendar_id}/events/{encoded_event_id}"
+        )
+        req = request.Request(
+            url=url,
+            headers={"Authorization": f"Bearer {credentials['access_token']}"},
+            method="DELETE",
+        )
+
+        try:
+            with request.urlopen(req, timeout=10) as response:
+                delete_status = response.status
+            result = {
+                "channel": "calendar",
+                "status": "deleted",
+                "calendar_id": calendar_id,
+                "calendar_event_id": existing_event_id,
+                "http_status": delete_status,
+            }
+            job.metadata.pop("calendar_event_id", None)
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            result = {
+                "channel": "calendar",
+                "status": "failed",
+                "calendar_id": calendar_id,
+                "calendar_event_id": existing_event_id,
+                "reason": f"google_calendar_http_error: {detail}",
+            }
+        except error.URLError as exc:
+            result = {
+                "channel": "calendar",
+                "status": "failed",
+                "calendar_id": calendar_id,
+                "calendar_event_id": existing_event_id,
+                "reason": f"google_calendar_connection_error: {exc.reason}",
+            }
+
+        job.history.append(
+            {
+                "timestamp": _isoformat(datetime.now(timezone.utc)),
+                "status": "calendar_delete",
+                "message": f"Processed Google Calendar deletion for '{job.title}'.",
+                "delivery_results": [result],
+            }
+        )
+        return result
+
+    def _jira_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        base_url_override: str | None = None,
+        allow_anonymous: bool = False,
+    ) -> dict[str, Any]:
+        configured_base_url = str(_get_env_setting("JIRA_BASE_URL", "JIRA_URL", "JIRA_DOMAIN") or "").strip().rstrip("/")
+        base_url = str(base_url_override or configured_base_url).strip().rstrip("/")
+        if not base_url:
+            raise ValueError("Missing Jira base URL. Set JIRA_BASE_URL in Scheduler/.env")
+
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if self._can_use_jira_auth(base_url):
+            email = str(_get_env_setting("JIRA_EMAIL", "ATLASSIAN_EMAIL") or "").strip()
+            token = str(_get_env_setting("JIRA_API_TOKEN", "JIRA_API_KEY", "ATLASSIAN_API_TOKEN") or "").strip()
+            if not email:
+                raise ValueError("Missing Jira email. Set JIRA_EMAIL in Scheduler/.env")
+            if not token:
+                raise ValueError("Missing Jira API token/key. Set JIRA_API_TOKEN or JIRA_API_KEY in Scheduler/.env")
+
+            auth_value = base64.b64encode(f"{email}:{token}".encode("utf-8")).decode("utf-8")
+            headers["Authorization"] = f"Basic {auth_value}"
+        elif not allow_anonymous:
+            raise ValueError(
+                "Jira auth is only configured for the Jira site in Scheduler/.env. Arbitrary external Jira links require public access."
+            )
+
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        req = request.Request(
+            url=f"{base_url}{path}",
+            data=body,
+            headers=headers,
+            method=method,
+        )
+
+        try:
+            with request.urlopen(req, timeout=15) as response:
+                raw = response.read().decode("utf-8")
+                if not raw:
+                    return {"status": response.status}
+                return json.loads(raw)
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise ValueError(f"Jira API request failed: {detail}") from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"Unable to reach Jira at {base_url}: {exc.reason}") from exc
+
+    def _fetch_jira_issue_public(self, base_url: str, issue_key: str) -> dict[str, Any]:
+        query = parse.urlencode(
+            {
+                "fields": "summary,description,duedate,priority,status,assignee,project,issuetype,labels",
+            }
+        )
+        try:
+            return self._jira_request(
+                "GET",
+                f"/rest/api/3/issue/{issue_key}?{query}",
+                base_url_override=base_url,
+                allow_anonymous=True,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Unable to access Jira issue {issue_key}: {exc}") from exc
+
+    def _fetch_jira_project_public(self, base_url: str, project_key: str) -> dict[str, Any]:
+        try:
+            return self._jira_request(
+                "GET",
+                f"/rest/api/3/project/{project_key}",
+                base_url_override=base_url,
+                allow_anonymous=True,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Unable to access Jira project {project_key}: {exc}") from exc
+
+    def _fetch_jira_issue(self, issue_key: str = "", issue_id: str = "") -> dict[str, Any]:
+        identifier = issue_key or issue_id
+        if not identifier:
+            raise ValueError("issue_key or issue_id is required to fetch a Jira issue.")
+
+        query = parse.urlencode(
+            {
+                "fields": "summary,description,duedate,priority,status,assignee,project,issuetype,labels",
+            }
+        )
+        return self._jira_request("GET", f"/rest/api/3/issue/{identifier}?{query}")
+
+    def _build_schedule_payload_from_jira_issue(
+        self,
+        issue: dict[str, Any],
+        default_offsets: Any = None,
+    ) -> dict[str, Any] | None:
+        fields = issue.get("fields") or {}
+        due_date_raw = str(fields.get("duedate") or "").strip()
+        if not due_date_raw:
+            return None
+
+        due_datetime = _parse_datetime(f"{due_date_raw}T09:00:00+00:00")
+        project = fields.get("project") or {}
+        priority = fields.get("priority") or {}
+        status = fields.get("status") or {}
+        assignee = fields.get("assignee") or {}
+        issue_type = fields.get("issuetype") or {}
+        issue_key = str(issue.get("key") or "").strip()
+        base_url = str(_get_env_setting("JIRA_BASE_URL", "JIRA_URL", "JIRA_DOMAIN") or "").strip().rstrip("/")
+        issue_url = f"{base_url}/browse/{issue_key}" if base_url and issue_key else ""
+
+        return {
+            "title": str(fields.get("summary") or issue_key or "Jira issue"),
+            "kind": "task",
+            "description": f"Jira issue {issue_key} due date reminder.",
+            "execute_at": _isoformat(due_datetime),
+            "channels": ["telegram"],
+            "reminder_offsets_minutes": default_offsets or [1440, 60, 15],
+            "source": "jira",
+            "metadata": {
+                "jira_issue_id": issue.get("id"),
+                "jira_issue_key": issue_key,
+                "jira_project_key": project.get("key"),
+                "jira_project_id": project.get("id"),
+                "jira_issue_type": issue_type.get("name"),
+                "jira_status": status.get("name"),
+                "jira_priority": priority.get("name"),
+                "jira_assignee": assignee.get("displayName"),
+                "jira_labels": fields.get("labels") or [],
+                "jira_url": issue_url,
+                "resource_url": issue_url,
+            },
+        }
+
+    def _can_use_jira_auth(self, base_url: str) -> bool:
+        configured_base_url = str(_get_env_setting("JIRA_BASE_URL", "JIRA_URL", "JIRA_DOMAIN") or "").strip().rstrip("/")
+        if not configured_base_url:
+            return False
+        return configured_base_url.lower() == base_url.lower()
+
+    @staticmethod
+    def _detect_jira_target(jira_url: str) -> dict[str, Any]:
+        parsed = parse.urlparse(jira_url)
+        host = parsed.netloc.lower()
+        if "atlassian.net" not in host:
+            raise ValueError("The provided URL is not a Jira Cloud URL.")
+
+        base_url = f"{parsed.scheme or 'https'}://{host}"
+        path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+        lowered = [part.lower() for part in path_parts]
+
+        if len(path_parts) >= 2 and lowered[0] == "browse":
+            return {
+                "entity_type": "issue",
+                "base_url": base_url,
+                "issue_key": path_parts[1],
+            }
+
+        if "projects" in lowered:
+            project_index = lowered.index("projects")
+            if len(path_parts) > project_index + 1:
+                return {
+                    "entity_type": "project",
+                    "base_url": base_url,
+                    "project_key": path_parts[project_index + 1],
+                }
+
+        return {
+            "entity_type": "site",
+            "base_url": base_url,
+        }
+
+    @staticmethod
+    def _summarise_jira_issue(issue: dict[str, Any]) -> str:
+        fields = issue.get("fields") or {}
+        project = fields.get("project") or {}
+        status = fields.get("status") or {}
+        priority = fields.get("priority") or {}
+        assignee = fields.get("assignee") or {}
+        issue_type = fields.get("issuetype") or {}
+
+        lines = [
+            f"Issue {issue.get('key')} belongs to project {project.get('key', 'unknown')}.",
+            f"Summary: {fields.get('summary', 'No summary available')}.",
+            f"Type: {issue_type.get('name', 'Unknown')}.",
+            f"Status: {status.get('name', 'Unknown')}.",
+            f"Priority: {priority.get('name', 'Unknown')}.",
+        ]
+        if assignee.get("displayName"):
+            lines.append(f"Assigned to {assignee['displayName']}.")
+        if fields.get("duedate"):
+            lines.append(f"Due date: {fields['duedate']}.")
+        labels = fields.get("labels") or []
+        if labels:
+            lines.append(f"Labels: {', '.join(labels)}.")
+        return " ".join(lines)
+
+    @staticmethod
+    def _summarise_jira_project(project: dict[str, Any]) -> str:
+        style = project.get("style", "")
+        category = (project.get("projectCategory") or {}).get("name")
+        summary = [
+            f"Project {project.get('key', 'unknown')} is named {project.get('name', 'unknown')}."
+        ]
+        if style:
+            summary.append(f"Style: {style}.")
+        if category:
+            summary.append(f"Category: {category}.")
+        lead = (project.get("lead") or {}).get("displayName")
+        if lead:
+            summary.append(f"Lead: {lead}.")
+        return " ".join(summary)
+
+    @staticmethod
+    def _build_issue_rag_document(jira_url: str, issue: dict[str, Any]) -> dict[str, Any]:
+        fields = issue.get("fields") or {}
+        project = fields.get("project") or {}
+        issue_type = fields.get("issuetype") or {}
+        status = fields.get("status") or {}
+        priority = fields.get("priority") or {}
+        assignee = fields.get("assignee") or {}
+        reporter = fields.get("reporter") or {}
+        labels = fields.get("labels") or []
+        description = fields.get("description")
+
+        description_text = json.dumps(description) if isinstance(description, (dict, list)) else str(description or "")
+        lines = [
+            f"Jira Issue: {issue.get('key', 'unknown')}",
+            f"Project: {project.get('key', 'unknown')} - {project.get('name', 'unknown')}",
+            f"Summary: {fields.get('summary', 'No summary available')}",
+            f"Type: {issue_type.get('name', 'Unknown')}",
+            f"Status: {status.get('name', 'Unknown')}",
+            f"Priority: {priority.get('name', 'Unknown')}",
+            f"Assignee: {assignee.get('displayName', 'Unassigned')}",
+            f"Reporter: {reporter.get('displayName', 'Unknown')}",
+            f"Due Date: {fields.get('duedate', 'Not set')}",
+            f"Labels: {', '.join(labels) if labels else 'None'}",
+            f"URL: {jira_url}",
+        ]
+        if description_text:
+            lines.append("Description:")
+            lines.append(description_text)
+
+        issue_key = str(issue.get("key") or "unknown")
+        return {
+            "document_id": f"jira-issue::{issue_key}",
+            "title": f"Jira Issue {issue_key}",
+            "content": "\n".join(lines),
+            "metadata": {
+                "source_type": "jira",
+                "entity_type": "issue",
+                "jira_issue_id": issue.get("id"),
+                "jira_issue_key": issue_key,
+                "jira_project_key": project.get("key"),
+                "jira_status": status.get("name"),
+                "jira_priority": priority.get("name"),
+                "jira_assignee": assignee.get("displayName"),
+                "jira_url": jira_url,
+            },
+        }
+
+    @staticmethod
+    def _build_project_rag_document(jira_url: str, project: dict[str, Any]) -> dict[str, Any]:
+        category = (project.get("projectCategory") or {}).get("name")
+        lead = (project.get("lead") or {}).get("displayName")
+        description = str(project.get("description") or "").strip()
+
+        lines = [
+            f"Jira Project: {project.get('key', 'unknown')}",
+            f"Name: {project.get('name', 'unknown')}",
+            f"Style: {project.get('style', 'Unknown')}",
+            f"Type: {project.get('projectTypeKey', 'Unknown')}",
+            f"Category: {category or 'None'}",
+            f"Lead: {lead or 'Unknown'}",
+            f"URL: {jira_url}",
+        ]
+        if description:
+            lines.append("Description:")
+            lines.append(description)
+
+        project_key = str(project.get("key") or "unknown")
+        return {
+            "document_id": f"jira-project::{project_key}",
+            "title": f"Jira Project {project_key}",
+            "content": "\n".join(lines),
+            "metadata": {
+                "source_type": "jira",
+                "entity_type": "project",
+                "jira_project_id": project.get("id"),
+                "jira_project_key": project_key,
+                "jira_project_name": project.get("name"),
+                "jira_url": jira_url,
+            },
+        }
+
+    @staticmethod
+    def _build_jira_description(text: str) -> dict[str, Any]:
+        return {
+            "type": "doc",
+            "version": 1,
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": text,
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def _resolve_google_calendar_access_token(self) -> tuple[dict[str, Any], str | None]:
+        credentials = self._load_calendar_credentials()
+        validation_error = self._validate_calendar_credentials(credentials)
+        if validation_error:
+            return credentials, validation_error
+
+        expires_at_raw = credentials.get("expires_at")
+        access_token = str(
+            credentials.get("access_token")
+            or credentials.get("token")
+            or credentials.get("google_calendar_access_token")
+            or ""
+        ).strip()
+
+        should_refresh = False
+        if expires_at_raw:
+            expires_at = _parse_datetime(expires_at_raw)
+            should_refresh = expires_at <= datetime.now(timezone.utc) + timedelta(minutes=5)
+        elif not access_token and credentials.get("refresh_token"):
+            should_refresh = True
+
+        if should_refresh:
+            refreshed, refresh_error = self._refresh_google_access_token(credentials)
+            if refresh_error:
+                return credentials, refresh_error
+            credentials = refreshed
+            access_token = str(credentials.get("access_token") or "").strip()
+
+        if not access_token:
+            return credentials, "missing_google_calendar_access_token"
+
+        return credentials, None
+
+    @staticmethod
+    def _validate_calendar_credentials(credentials: dict[str, Any]) -> str | None:
+        if not credentials:
+            return "missing_calendar_credentials"
+
+        access_token = credentials.get("access_token") or credentials.get("token") or credentials.get("google_calendar_access_token")
+        refresh_token = credentials.get("refresh_token")
+        client_id = credentials.get("client_id")
+        client_secret = credentials.get("client_secret")
+
+        if access_token:
+            return None
+
+        if refresh_token and client_id and client_secret:
+            return None
+
+        return (
+            "calendar_credentials_incomplete: expected access_token, or refresh_token + client_id + client_secret"
+        )
+
+    def _refresh_google_access_token(self, credentials: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+        refresh_token = str(credentials.get("refresh_token") or "").strip()
+        client_id = str(credentials.get("client_id") or "").strip()
+        client_secret = str(credentials.get("client_secret") or "").strip()
+        token_uri = str(credentials.get("token_uri") or "https://oauth2.googleapis.com/token").strip()
+
+        if not refresh_token or not client_id or not client_secret:
+            return credentials, "calendar_refresh_not_possible: missing refresh_token/client_id/client_secret"
+
+        token_request_body = parse.urlencode(
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }
+        ).encode("utf-8")
+        req = request.Request(
+            url=token_uri,
+            data=token_request_body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+
+        try:
+            with request.urlopen(req, timeout=10) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            return credentials, f"calendar_refresh_http_error: {detail}"
+        except error.URLError as exc:
+            return credentials, f"calendar_refresh_connection_error: {exc.reason}"
+
+        new_access_token = str(response_payload.get("access_token") or "").strip()
+        if not new_access_token:
+            return credentials, "calendar_refresh_failed: access_token_missing_in_response"
+
+        refreshed = dict(credentials)
+        refreshed["access_token"] = new_access_token
+        refreshed["token_type"] = response_payload.get("token_type", refreshed.get("token_type", "Bearer"))
+        refreshed["scope"] = response_payload.get("scope", refreshed.get("scope"))
+        refreshed["refreshed_at"] = _isoformat(datetime.now(timezone.utc))
+
+        expires_in = response_payload.get("expires_in")
+        if expires_in:
+            refreshed["expires_at"] = _isoformat(
+                datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+            )
+
+        _save_json_file(CREDENTIALS_PATH, refreshed)
+        return refreshed, None
+
     def _load_calendar_credentials(self) -> dict[str, Any]:
         if not os.path.exists(CREDENTIALS_PATH):
             return {}
@@ -750,9 +1445,13 @@ class SchedulerEngine:
             for offset in job.reminder_offsets_minutes
         ]
 
-        return {
-            "summary": job.title,
-            "description": job.description or f"{job.kind.title()} scheduled from UpLink.",
+        payload = {
+            "summary": str(job.metadata.get("calendar_summary") or job.title),
+            "description": str(
+                job.metadata.get("calendar_description")
+                or job.description
+                or f"{job.kind.title()} scheduled from UpLink."
+            ),
             "location": job.metadata.get("location"),
             "start": {
                 "dateTime": job.execute_at.isoformat(),
@@ -771,14 +1470,31 @@ class SchedulerEngine:
                 "title": "UpLink Scheduler",
                 "url": str(job.metadata.get("resource_url") or ""),
             },
-            "conferenceData": {
+        }
+        if job.metadata.get("calendar_visibility"):
+            payload["visibility"] = job.metadata["calendar_visibility"]
+        if job.metadata.get("calendar_status"):
+            payload["status"] = job.metadata["calendar_status"]
+
+        recurrence = job.metadata.get("recurrence")
+        if isinstance(recurrence, list) and recurrence:
+            payload["recurrence"] = [str(item) for item in recurrence if str(item).strip()]
+        elif isinstance(recurrence, str) and recurrence.strip():
+            payload["recurrence"] = [recurrence.strip()]
+
+        if _as_bool(job.metadata.get("create_meet_link")):
+            payload["conferenceData"] = {
                 "createRequest": {
-                    "requestId": job.job_id,
+                    "requestId": f"{job.job_id}-{uuid.uuid4().hex[:8]}",
                 }
             }
-            if job.metadata.get("meeting_link")
-            else None,
-        }
+
+        if job.metadata.get("meeting_link"):
+            payload["description"] = (
+                f"{payload['description']}\nMeeting link: {job.metadata['meeting_link']}".strip()
+            )
+
+        return payload
 
     @staticmethod
     def _build_message(job: ScheduledJob, action: ScheduledAction) -> str:
@@ -825,7 +1541,11 @@ class SchedulerRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         try:
-            if self.path == "/health":
+            parsed = parse.urlparse(self.path)
+            path = parsed.path
+            query = parse.parse_qs(parsed.query)
+
+            if path == "/health":
                 self._send_json(
                     {
                         "service": "scheduler",
@@ -835,52 +1555,113 @@ class SchedulerRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
 
-            if self.path == "/jobs":
+            if path == "/jobs":
                 self._send_json({"jobs": self.engine.list_jobs()})
                 return
 
-            if self.path.startswith("/telegram/links/"):
-                user_id = self.path.removeprefix("/telegram/links/")
+            if path == "/jira/projects":
+                self._send_json(self.engine.list_jira_projects())
+                return
+
+            if path == "/jira/issues":
+                jql = query.get("jql", [None])[0]
+                max_results = int(query.get("max_results", ["25"])[0])
+                self._send_json(self.engine.search_jira_issues(jql=jql, max_results=max_results))
+                return
+
+            if path == "/jira/analyze-link":
+                jira_url = query.get("url", [None])[0]
+                if not jira_url:
+                    self._send_json({"error": "Missing Jira url query parameter."}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json(self.engine.analyze_jira_link(jira_url))
+                return
+
+            if path == "/jira/rag-document":
+                jira_url = query.get("url", [None])[0]
+                if not jira_url:
+                    self._send_json({"error": "Missing Jira url query parameter."}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json(self.engine.build_jira_rag_document({"url": jira_url}))
+                return
+
+            if path.startswith("/telegram/links/"):
+                user_id = path.removeprefix("/telegram/links/")
                 self._send_json({"link": self.engine.get_telegram_link(user_id)})
                 return
 
-            if self.path.startswith("/jobs/"):
-                job_id = self.path.removeprefix("/jobs/")
+            if path.startswith("/jobs/"):
+                job_id = path.removeprefix("/jobs/")
                 self._send_json({"job": self.engine.get_job(job_id)})
                 return
 
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
         except KeyError:
             self._send_json({"error": "Job not found."}, status=HTTPStatus.NOT_FOUND)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        except RuntimeError as exc:
+            self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
 
     def do_POST(self) -> None:  # noqa: N802
         try:
-            if self.path in {"/schedule", "/tasks", "/events"}:
+            parsed = parse.urlparse(self.path)
+            path = parsed.path
+
+            if path in {"/schedule", "/tasks", "/events"}:
                 payload = self._read_json()
                 result = self.engine.schedule(payload)
                 self._send_json(result, status=HTTPStatus.ACCEPTED)
                 return
 
-            if self.path == "/telegram/link-token":
+            if path == "/jira/issues":
+                payload = self._read_json()
+                result = self.engine.create_jira_issue(payload)
+                self._send_json(result, status=HTTPStatus.CREATED)
+                return
+
+            if path == "/jira/analyze-link":
+                payload = self._read_json()
+                jira_url = str(payload.get("url") or payload.get("jira_url") or "").strip()
+                if not jira_url:
+                    self._send_json({"error": "url or jira_url is required."}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                result = self.engine.analyze_jira_link(jira_url)
+                self._send_json(result, status=HTTPStatus.OK)
+                return
+
+            if path == "/jira/rag-document":
+                payload = self._read_json()
+                result = self.engine.build_jira_rag_document(payload)
+                self._send_json(result, status=HTTPStatus.OK)
+                return
+
+            if path == "/jira/issues/schedule":
+                payload = self._read_json()
+                result = self.engine.schedule_jira_issue_due_date(payload)
+                self._send_json(result, status=HTTPStatus.ACCEPTED)
+                return
+
+            if path == "/telegram/link-token":
                 payload = self._read_json()
                 result = self.engine.create_telegram_link_token(payload)
                 self._send_json(result, status=HTTPStatus.CREATED)
                 return
 
-            if self.path == "/telegram/update":
+            if path == "/telegram/update":
                 payload = self._read_json()
                 result = self.engine.process_telegram_update(payload)
                 self._send_json(result, status=HTTPStatus.OK)
                 return
 
-            if self.path.endswith("/cancel") and self.path.startswith("/jobs/"):
-                job_id = self.path[len("/jobs/") : -len("/cancel")].strip("/")
+            if path.endswith("/cancel") and path.startswith("/jobs/"):
+                job_id = path[len("/jobs/") : -len("/cancel")].strip("/")
                 result = self.engine.cancel(job_id)
                 self._send_json(result, status=HTTPStatus.OK)
                 return
 
-            if self.path.endswith("/trigger") and self.path.startswith("/jobs/"):
-                job_id = self.path[len("/jobs/") : -len("/trigger")].strip("/")
+            if path.endswith("/trigger") and path.startswith("/jobs/"):
+                job_id = path[len("/jobs/") : -len("/trigger")].strip("/")
                 payload = self._read_json()
                 result = self.engine.trigger(job_id, str(payload.get("action_type") or "reminder"))
                 self._send_json(result, status=HTTPStatus.OK)
@@ -891,6 +1672,8 @@ class SchedulerRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         except KeyError:
             self._send_json({"error": "Job not found."}, status=HTTPStatus.NOT_FOUND)
+        except RuntimeError as exc:
+            self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
 
     def log_message(self, format: str, *args: Any) -> None:
         return

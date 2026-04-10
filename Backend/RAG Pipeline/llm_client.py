@@ -27,6 +27,16 @@ class LLMClient:
         self.chat_model = os.getenv("CHAT_MODEL") or os.getenv("LLM_MODEL") or "gemini-1.5-pro"
 
         if self.provider == "google":
+            # Sanitize Google model names (must be lowercase and prefixed with 'models/')
+            def sanitize_google(name):
+                name = name.lower()
+                if not name.startswith("models/"):
+                    return f"models/{name}"
+                return name
+            
+            self.summary_model = sanitize_google(self.summary_model)
+            self.chat_model = sanitize_google(self.chat_model)
+
             if not self.google_key:
                 print("[!] ERROR: GOOGLE_API_KEY missing for Google provider.")
             else:
@@ -65,10 +75,23 @@ class LLMClient:
 
     def _google_chat(self, messages: List[Dict], model_name: str, temperature: float) -> Optional[str]:
         try:
-            model = genai.GenerativeModel(model_name)
-            # Convert to Gemini format
-            prompt = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages]) + "\nASSISTANT:"
-            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=temperature))
+            # Separate the 'system' instruction from the 'user' messages
+            system_msg = next((m['content'] for m in messages if m['role'] == 'system'), None)
+            user_msgs = [m for m in messages if m['role'] != 'system']
+            
+            # Use the official system_instruction parameter
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system_msg
+            )
+            
+            # Format history for Gemini
+            prompt = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in user_msgs])
+            
+            response = model.generate_content(
+                prompt, 
+                generation_config=genai.types.GenerationConfig(temperature=temperature)
+            )
             return response.text
         except Exception as e:
             print(f"[!] Gemini Error: {e}")
@@ -115,13 +138,27 @@ class LLMClient:
             prompt += f"--- FILE: {f['filename']} ---\n{f['content'][:5000]}\n\n"
 
         try:
+            # We remove response_mime_type as it's not supported by all Gemma models
             response = self.google_summary.generate_content(
                 prompt, 
-                generation_config=genai.types.GenerationConfig(temperature=0.2, response_mime_type="application/json")
+                generation_config=genai.types.GenerationConfig(temperature=0.2)
             )
-            return json.loads(response.text)
+            return self._extract_json(response.text)
         except Exception as e:
             print(f"[!] Gemini Batch Error: {e}")
+            return {}
+
+    def _extract_json(self, text: str) -> Dict:
+        """Helper to robustly extract JSON from LLM responses."""
+        try:
+            # Look for the first { and last }
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start != -1 and end > 0:
+                return json.loads(text[start:end])
+            return json.loads(text)
+        except Exception as e:
+            print(f"[!] Failed to parse JSON from response: {e}")
             return {}
 
     def select_key_files(self, repo_tree: List[str]) -> List[str]:
@@ -137,6 +174,7 @@ class LLMClient:
             start, end = response.find("["), response.rfind("]") + 1
             if start != -1 and end > 0:
                 return json.loads(response[start:end])
-        except:
-            pass
-        return []
+            return json.loads(response)
+        except Exception as e:
+            print(f"[!] Failed to parse file selection JSON: {e}")
+            return []

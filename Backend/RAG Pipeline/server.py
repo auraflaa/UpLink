@@ -215,10 +215,11 @@ def generate_visualisation(request: ScanRequest):
     Requires the repository to have been analysed first via /analyze.
     """
     try:
+        url = request.url
         scroll_res = requests.post(
             f"{QDRANT_URL}/collections/{request.collection_name}/points/scroll",
             json={
-                "filter": {"must": [{"key": "repo_url", "match": {"value": request.repo_url}}]},
+                "filter": {"must": [{"key": "source_url", "match": {"value": url}}]},
                 "limit": 50,
                 "with_payload": True,
                 "with_vector": False

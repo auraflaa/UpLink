@@ -138,7 +138,7 @@ class RAGPipelineAgent:
             t0 = self.time.perf_counter()
             print(f"[*] Indexing {len(summaries)} summaries into '{collection_name}'...")
             self._index_summaries(summaries, collection_name)
-            self.last_run_telemetry['vector_indexing_ms'] = (self.time.perf_counter() - t0) * 1000
+            self.last_run_telemetry['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
             
             print(f"[✅] Analysis complete. RAG Pipeline indexed {len(summaries)} files.")
             return summaries
@@ -148,7 +148,7 @@ class RAGPipelineAgent:
             traceback.print_exc()
             return None
         finally:
-            self.last_run_telemetry['total_ingestion_ms'] = (self.time.perf_counter() - t_total) * 1000
+            self.last_run_telemetry['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
 
     def _delete_stale_entries(self, collection_name: str, source_url: str):
         """Removes old vector entries for a specific source before re-indexing."""
