@@ -2,7 +2,7 @@
 venv/
 Backend/venv/
 ENV/
-*.env
+.env
 
 # Python
 **/__pycache__/
@@ -61,9 +61,13 @@ lerna-debug.log*
 Frontend/node_modules/
 Frontend/dist/
 Frontend/dist-ssr/
+Frontend/build/
+Frontend/.vite/
 Frontend/*.local
 Frontend/.env
+Frontend/.env.local
 Frontend/.env.*.local
+!Frontend/.env.example
 
 # Editor directories and files
 .vscode/*
