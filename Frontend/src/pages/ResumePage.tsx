@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { motion } from "motion/react";
 import { UploadCloud, FileText, CheckCircle, X, AlertCircle } from "lucide-react";
 
