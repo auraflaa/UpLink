@@ -133,7 +133,7 @@ export default function EventsPage() {
               placeholder="Search events by name or type..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl pl-11 pr-4 py-3.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all shadow-sm dark:shadow-none"
+              className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl pl-11 pr-4 py-3.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50 focus:border-neutral-500 transition-all shadow-sm dark:shadow-none"
             />
           </div>
 
@@ -144,7 +144,7 @@ export default function EventsPage() {
              </div>
           ) : filteredEvents.length > 0 ? (
             filteredEvents.map((event) => (
-              <div key={event.id} className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-sm dark:shadow-none hover:border-purple-500/50 transition-colors group">
+              <div key={event.id} className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-sm dark:shadow-none hover:border-neutral-500/50 transition-colors group">
                 <div className="flex flex-col sm:flex-row justify-between gap-4 mb-4">
                   <div className="flex items-start gap-4">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-${event.color}-100 dark:bg-${event.color}-500/10 text-${event.color}-600 dark:text-${event.color}-400`}>
@@ -157,7 +157,7 @@ export default function EventsPage() {
                           {event.type}
                         </span>
                       </div>
-                      <p className="text-sm font-medium text-purple-600 dark:text-purple-400">{event.status}</p>
+                      <p className="text-sm font-medium text-neutral-600 dark:text-neutral-400">{event.status}</p>
                     </div>
                   </div>
                   <button className="w-10 h-10 rounded-full border border-neutral-200 dark:border-neutral-700 flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors shrink-0">
@@ -196,14 +196,14 @@ export default function EventsPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          <div className="bg-purple-600 rounded-3xl p-6 text-white shadow-lg shadow-purple-500/20 relative overflow-hidden">
+          <div className="bg-neutral-600 rounded-3xl p-6 text-white shadow-lg shadow-neutral-500/20 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2"></div>
             <h3 className="text-xl font-bold mb-2 relative z-10">Momentum Score</h3>
             <div className="flex items-end gap-2 mb-4 relative z-10">
               <span className="text-5xl font-black tracking-tighter">84</span>
-              <span className="text-purple-200 mb-1 font-medium">/ 100</span>
+              <span className="text-neutral-200 mb-1 font-medium">/ 100</span>
             </div>
-            <p className="text-purple-100 text-sm relative z-10">You're in the top 15% of active builders this month. Keep it up!</p>
+            <p className="text-neutral-100 text-sm relative z-10">You're in the top 15% of active builders this month. Keep it up!</p>
           </div>
         </div>
       </div>
@@ -228,11 +228,11 @@ export default function EventsPage() {
               <form onSubmit={handleAddEvent} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 dark:text-neutral-300">Event Title</label>
-                  <input required type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none" placeholder="e.g. SF AI Hackathon" />
+                  <input required type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-neutral-500 outline-none" placeholder="e.g. SF AI Hackathon" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 dark:text-neutral-300">Type</label>
-                  <select value={newType} onChange={e => setNewType(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none">
+                  <select value={newType} onChange={e => setNewType(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-neutral-500 outline-none">
                     <option value="Hackathon">Hackathon</option>
                     <option value="Conference">Conference</option>
                     <option value="Deadline">Deadline</option>
@@ -240,15 +240,15 @@ export default function EventsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 dark:text-neutral-300">Date & Time</label>
-                  <input required type="datetime-local" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none" />
+                  <input required type="datetime-local" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-neutral-500 outline-none" />
                 </div>
                 <div>
                    <label className="block text-sm font-medium mb-1 dark:text-neutral-300">Location</label>
-                   <input required type="text" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Online or City" />
+                   <input required type="text" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-neutral-500 outline-none" placeholder="Online or City" />
                 </div>
 
                 <div className="pt-4 pt-2">
-                   <button disabled={isSubmitting} type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-xl py-3 font-medium transition-colors disabled:opacity-50 flex justify-center items-center">
+                   <button disabled={isSubmitting} type="submit" className="w-full bg-neutral-600 hover:bg-neutral-700 text-white rounded-xl py-3 font-medium transition-colors disabled:opacity-50 flex justify-center items-center">
                      {isSubmitting ? <Loader2 className="animate-spin" /> : "Schedule & Sync"}
                    </button>
                 </div>

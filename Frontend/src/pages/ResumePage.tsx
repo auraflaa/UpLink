@@ -60,14 +60,14 @@ export default function ResumePage() {
           <div 
             className={`border-2 border-dashed rounded-3xl p-12 text-center transition-all ${
               isDragging 
-                ? "border-purple-500 bg-purple-50 dark:bg-purple-500/10" 
-                : "border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900/50 hover:border-purple-400 dark:hover:border-purple-500"
+                ? "border-neutral-500 bg-neutral-50 dark:bg-neutral-500/10" 
+                : "border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900/50 hover:border-neutral-400 dark:hover:border-neutral-500"
             }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <div className="w-20 h-20 bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <div className="w-20 h-20 bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 rounded-full flex items-center justify-center mx-auto mb-6">
               <UploadCloud className="w-10 h-10" />
             </div>
             <h3 className="text-xl font-semibold text-neutral-900 dark:text-white mb-2">Drag & drop your document here</h3>
@@ -96,7 +96,7 @@ export default function ResumePage() {
               className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 flex items-center justify-between shadow-sm dark:shadow-none"
             >
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center">
+                <div className="w-12 h-12 bg-neutral-100 dark:bg-neutral-500/10 text-neutral-600 dark:text-neutral-400 rounded-xl flex items-center justify-center">
                   <FileText className="w-6 h-6" />
                 </div>
                 <div>
@@ -109,7 +109,7 @@ export default function ResumePage() {
                 {!isUploading && !uploadComplete && (
                   <button 
                     onClick={() => setFile(null)}
-                    className="p-2 text-neutral-400 hover:text-red-500 transition-colors"
+                    className="p-2 text-neutral-400 hover:text-neutral-500 transition-colors"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -120,8 +120,8 @@ export default function ResumePage() {
                   disabled={isUploading || uploadComplete}
                   className={`px-6 py-2.5 rounded-xl font-medium transition-all flex items-center gap-2 ${
                     uploadComplete 
-                      ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 cursor-default"
-                      : "bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
+                      ? "bg-neutral-100 dark:bg-neutral-500/20 text-neutral-700 dark:text-neutral-400 cursor-default"
+                      : "bg-neutral-600 hover:bg-neutral-700 text-white disabled:opacity-50"
                   }`}
                 >
                   {isUploading ? (
@@ -141,7 +141,7 @@ export default function ResumePage() {
         <div className="space-y-6">
           <div className="bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-sm dark:shadow-none">
             <h3 className="text-lg font-semibold mb-4 text-neutral-900 dark:text-white flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-purple-500" />
+              <AlertCircle className="w-5 h-5 text-neutral-500" />
               How it works
             </h3>
             <ul className="space-y-4 text-neutral-600 dark:text-neutral-400 text-sm">
@@ -171,7 +171,7 @@ export default function ResumePage() {
                     <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">Software_Engineer_Resume_v{i}.pdf</p>
                     <p className="text-xs text-neutral-500">Oct {12 + i}, 2025</p>
                   </div>
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <CheckCircle className="w-4 h-4 text-neutral-500" />
                 </div>
               ))}
             </div>

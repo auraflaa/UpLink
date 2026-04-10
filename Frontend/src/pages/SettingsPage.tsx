@@ -19,7 +19,7 @@ export default function SettingsPage() {
         {/* Profile Section */}
         <div className="p-8 border-b border-neutral-200 dark:border-neutral-800">
           <div className="flex items-center gap-4 mb-6">
-            <div className="w-10 h-10 bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 rounded-full flex items-center justify-center">
               <User className="w-5 h-5" />
             </div>
             <h2 className="text-xl font-semibold text-neutral-900 dark:text-white">Profile Information</h2>
@@ -28,11 +28,11 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Full Name</label>
-              <input type="text" defaultValue="Student Developer" className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-2.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+              <input type="text" defaultValue="Student Developer" className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-2.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50" />
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Email Address</label>
-              <input type="email" defaultValue="student@university.edu" className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-2.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+              <input type="email" defaultValue="student@university.edu" className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-2.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50" />
             </div>
           </div>
         </div>
@@ -40,7 +40,7 @@ export default function SettingsPage() {
         {/* Integrations Section */}
         <div className="p-8 border-b border-neutral-200 dark:border-neutral-800">
           <div className="flex items-center gap-4 mb-6">
-            <div className="w-10 h-10 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 rounded-full flex items-center justify-center">
               <Shield className="w-5 h-5" />
             </div>
             <h2 className="text-xl font-semibold text-neutral-900 dark:text-white">Connected Accounts</h2>
@@ -52,7 +52,7 @@ export default function SettingsPage() {
                 <p className="font-medium text-neutral-900 dark:text-white">GitHub</p>
                 <p className="text-sm text-neutral-500">Connected as @studentdev</p>
               </div>
-              <button className="px-4 py-2 text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-red-500 transition-colors">Disconnect</button>
+              <button className="px-4 py-2 text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-500 transition-colors">Disconnect</button>
             </div>
           </div>
         </div>
@@ -60,7 +60,7 @@ export default function SettingsPage() {
         {/* Preferences Section */}
         <div className="p-8">
           <div className="flex items-center gap-4 mb-6">
-            <div className="w-10 h-10 bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 rounded-full flex items-center justify-center">
               <Bell className="w-5 h-5" />
             </div>
             <h2 className="text-xl font-semibold text-neutral-900 dark:text-white">Notifications</h2>
@@ -74,7 +74,7 @@ export default function SettingsPage() {
               </div>
               <div className="relative">
                 <input type="checkbox" className="sr-only peer" defaultChecked />
-                <div className="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                <div className="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-neutral-600"></div>
               </div>
             </label>
             
@@ -85,14 +85,14 @@ export default function SettingsPage() {
               </div>
               <div className="relative">
                 <input type="checkbox" className="sr-only peer" defaultChecked />
-                <div className="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                <div className="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-neutral-600"></div>
               </div>
             </label>
           </div>
         </div>
 
         <div className="p-8 bg-neutral-50 dark:bg-neutral-900/50 border-t border-neutral-200 dark:border-neutral-800 flex justify-end">
-          <button className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors">
+          <button className="px-6 py-2.5 bg-neutral-600 hover:bg-neutral-700 text-white rounded-xl font-medium transition-colors">
             Save Changes
           </button>
         </div>

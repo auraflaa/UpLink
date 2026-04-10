@@ -20,7 +20,7 @@ import '@xyflow/react/dist/style.css';
 // Custom Node Components
 const DataSourceNode = ({ data }: { data: any }) => (
   <div className="p-4 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm min-w-[150px]">
-    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
+    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-neutral-500" />
     <div className="flex items-center gap-3">
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${data.colorClass}`}>
         {data.icon}
@@ -34,11 +34,11 @@ const DataSourceNode = ({ data }: { data: any }) => (
 );
 
 const AINode = ({ data }: { data: any }) => (
-  <div className="p-5 rounded-2xl border-2 border-purple-500 bg-white dark:bg-neutral-900 shadow-md min-w-[250px]">
-    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-purple-500" />
-    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-purple-500" />
+  <div className="p-5 rounded-2xl border-2 border-neutral-500 bg-white dark:bg-neutral-900 shadow-md min-w-[250px]">
+    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-neutral-500" />
+    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-neutral-500" />
     <div className="flex items-center gap-4 mb-3">
-      <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+      <div className="w-12 h-12 rounded-xl bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 flex items-center justify-center">
         <Bot className="w-6 h-6" />
       </div>
       <div>
@@ -51,9 +51,9 @@ const AINode = ({ data }: { data: any }) => (
 
 const OutputNode = ({ data }: { data: any }) => (
   <div className="p-4 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm min-w-[200px]">
-    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-pink-500" />
+    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-neutral-500" />
     <div className="flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl bg-pink-100 dark:bg-pink-500/20 text-pink-600 dark:text-pink-400 flex items-center justify-center">
+      <div className="w-10 h-10 rounded-xl bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 flex items-center justify-center">
         <MessageSquare className="w-5 h-5" />
       </div>
       <div>
@@ -79,7 +79,7 @@ const initialNodes: Node[] = [
       label: 'Resume', 
       sublabel: 'PDF Document',
       icon: <FileText className="w-5 h-5" />,
-      colorClass: 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400'
+      colorClass: 'bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400'
     },
   },
   {
@@ -90,7 +90,7 @@ const initialNodes: Node[] = [
       label: 'GitHub', 
       sublabel: 'API Source',
       icon: <Github className="w-5 h-5" />,
-      colorClass: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+      colorClass: 'bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400'
     },
   },
   {
@@ -162,8 +162,8 @@ export default function BuilderPage() {
             disabled={isPublishing || published}
             className={`px-5 py-2 rounded-xl font-medium transition-all flex items-center gap-2 ${
               published 
-                ? "bg-emerald-500 text-white" 
-                : "bg-purple-600 hover:bg-purple-700 text-white"
+                ? "bg-neutral-500 text-white" 
+                : "bg-neutral-600 hover:bg-neutral-700 text-white"
             }`}
           >
             {isPublishing ? (
@@ -182,7 +182,7 @@ export default function BuilderPage() {
         {/* Left Sidebar: Blocks Palette */}
         <div className="lg:col-span-3 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-5 flex flex-col overflow-y-auto custom-scrollbar shadow-sm dark:shadow-none">
           <h3 className="font-semibold text-neutral-900 dark:text-white mb-4 flex items-center gap-2">
-            <Plus className="w-5 h-5 text-purple-500" /> Add Blocks
+            <Plus className="w-5 h-5 text-neutral-500" /> Add Blocks
           </h3>
           
           <div className="space-y-6">
@@ -190,12 +190,12 @@ export default function BuilderPage() {
             <div>
               <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Data Sources</h4>
               <div className="space-y-2">
-                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-purple-400 dark:hover:border-purple-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
-                  <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0"><FileText className="w-4 h-4" /></div>
+                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-neutral-400 dark:hover:border-neutral-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
+                  <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 flex items-center justify-center shrink-0"><FileText className="w-4 h-4" /></div>
                   <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Resume PDF</span>
                 </div>
-                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-purple-400 dark:hover:border-purple-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0"><Github className="w-4 h-4" /></div>
+                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-neutral-400 dark:hover:border-neutral-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
+                  <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 flex items-center justify-center shrink-0"><Github className="w-4 h-4" /></div>
                   <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">GitHub Repo</span>
                 </div>
               </div>
@@ -205,12 +205,12 @@ export default function BuilderPage() {
             <div>
               <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">AI Functions</h4>
               <div className="space-y-2">
-                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-purple-400 dark:hover:border-purple-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
-                  <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0"><Bot className="w-4 h-4" /></div>
+                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-neutral-400 dark:hover:border-neutral-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
+                  <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 flex items-center justify-center shrink-0"><Bot className="w-4 h-4" /></div>
                   <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Gap Analyzer</span>
                 </div>
-                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-purple-400 dark:hover:border-purple-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
-                  <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0"><Sparkles className="w-4 h-4" /></div>
+                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-neutral-400 dark:hover:border-neutral-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
+                  <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 flex items-center justify-center shrink-0"><Sparkles className="w-4 h-4" /></div>
                   <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Custom Prompt</span>
                 </div>
               </div>
@@ -220,8 +220,8 @@ export default function BuilderPage() {
             <div>
               <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Outputs & UI</h4>
               <div className="space-y-2">
-                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-purple-400 dark:hover:border-purple-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
-                  <div className="w-8 h-8 rounded-lg bg-pink-100 dark:bg-pink-500/20 text-pink-600 dark:text-pink-400 flex items-center justify-center shrink-0"><MessageSquare className="w-4 h-4" /></div>
+                <div className="p-3 border border-neutral-200 dark:border-neutral-800 rounded-xl flex items-center gap-3 cursor-grab hover:border-neutral-400 dark:hover:border-neutral-500 transition-colors bg-neutral-50 dark:bg-neutral-950/50">
+                  <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 flex items-center justify-center shrink-0"><MessageSquare className="w-4 h-4" /></div>
                   <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Chat Interface</span>
                 </div>
               </div>
@@ -251,7 +251,7 @@ export default function BuilderPage() {
         {/* Right Sidebar: Configuration */}
         <div className="lg:col-span-3 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-5 flex flex-col overflow-y-auto custom-scrollbar shadow-sm dark:shadow-none">
           <h3 className="font-semibold text-neutral-900 dark:text-white mb-6 flex items-center gap-2">
-            <Settings2 className="w-5 h-5 text-purple-500" /> Configuration
+            <Settings2 className="w-5 h-5 text-neutral-500" /> Configuration
           </h3>
 
           {!selectedNode && (
@@ -264,7 +264,7 @@ export default function BuilderPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Block Name</label>
-                <input type="text" defaultValue="Career Gap Analyzer" className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+                <input type="text" defaultValue="Career Gap Analyzer" className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50" />
               </div>
               
               <div>
@@ -272,13 +272,13 @@ export default function BuilderPage() {
                 <textarea 
                   rows={6} 
                   defaultValue="Compare my resume and GitHub repos against entry-level React developer roles. Highlight missing skills. Always cite which project or resume section you are referencing."
-                  className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none" 
+                  className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50 resize-none" 
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Model Selection</label>
-                <select className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50">
+                <select className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50">
                   <option>Gemini 1.5 Flash (Fast)</option>
                   <option>Gemini 1.5 Pro (Advanced)</option>
                 </select>
@@ -290,11 +290,11 @@ export default function BuilderPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Source Name</label>
-                <input type="text" defaultValue="Resume" className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+                <input type="text" defaultValue="Resume" className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50" />
               </div>
               <div className="p-4 border border-neutral-200 dark:border-neutral-800 rounded-xl bg-neutral-50 dark:bg-neutral-950 flex items-center justify-between">
                 <span className="text-sm font-medium text-neutral-900 dark:text-white">johndoe_resume.pdf</span>
-                <button className="text-xs text-red-500 font-medium">Replace</button>
+                <button className="text-xs text-neutral-500 font-medium">Replace</button>
               </div>
             </motion.div>
           )}
@@ -303,13 +303,13 @@ export default function BuilderPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Connection</label>
-                <div className="p-3 border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl flex items-center gap-2 text-emerald-700 dark:text-emerald-400 text-sm font-medium">
+                <div className="p-3 border border-neutral-200 dark:border-neutral-900/50 bg-neutral-50 dark:bg-neutral-500/10 rounded-xl flex items-center gap-2 text-neutral-700 dark:text-neutral-400 text-sm font-medium">
                   <CheckCircle2 className="w-4 h-4" /> Authenticated as @johndoe
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Included Repositories</label>
-                <select className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50">
+                <select className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50">
                   <option>All Public Repos</option>
                   <option>Selected Repos Only...</option>
                 </select>
@@ -321,7 +321,7 @@ export default function BuilderPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Interface Type</label>
-                <select className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50">
+                <select className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50">
                   <option>Conversational Chatbot</option>
                   <option>Static Dashboard</option>
                   <option>API Endpoint</option>
@@ -332,7 +332,7 @@ export default function BuilderPage() {
                 <textarea 
                   rows={3} 
                   defaultValue="Hi! I'm John's AI assistant. Ask me anything about his experience, projects, or skills."
-                  className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none" 
+                  className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50 resize-none" 
                 />
               </div>
             </motion.div>

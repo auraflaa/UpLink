@@ -29,19 +29,19 @@ const TypewriterText = ({ text, delay = 0 }: { text: string, delay?: number }) =
   return (
     <span>
       {displayedText}
-      <span className="animate-pulse ml-0.5 text-purple-500">|</span>
+      <span className="animate-pulse ml-0.5 text-neutral-500">|</span>
     </span>
   );
 };
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 font-sans selection:bg-purple-500/30 selection:text-purple-900 dark:selection:bg-purple-500/30 dark:selection:text-purple-100 transition-colors duration-500 overflow-x-hidden relative">
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 font-sans selection:bg-neutral-500/30 selection:text-neutral-900 dark:selection:bg-neutral-500/30 dark:selection:text-neutral-100 transition-colors duration-500 overflow-x-hidden relative">
       
       {/* Header */}
       <header className="fixed top-0 w-full px-6 py-5 flex items-center justify-between z-50 bg-neutral-50/90 dark:bg-neutral-950/90 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 transition-colors">
         <div className="flex items-center gap-2">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-purple-600 dark:text-purple-400">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-neutral-600 dark:text-neutral-400">
             <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="3"/>
             <circle cx="3" cy="12" r="2.5" fill="currentColor"/>
           </svg>
@@ -65,9 +65,9 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-purple-200 dark:border-purple-500/20 mb-8 bg-purple-100/50 dark:bg-purple-500/10 backdrop-blur-sm text-purple-700 dark:text-purple-400"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-neutral-200 dark:border-neutral-500/20 mb-8 bg-neutral-100/50 dark:bg-neutral-500/10 backdrop-blur-sm text-neutral-700 dark:text-neutral-400"
           >
-            <span className="w-2 h-2 rounded-full bg-purple-600 dark:bg-purple-400 animate-pulse"></span>
+            <span className="w-2 h-2 rounded-full bg-neutral-600 dark:bg-neutral-400 animate-pulse"></span>
             <span className="text-xs font-bold tracking-[0.2em] uppercase">UpLink</span>
           </motion.div>
           
@@ -78,7 +78,7 @@ export default function LandingPage() {
             className="text-6xl md:text-8xl lg:text-[7rem] font-bold tracking-tighter leading-[0.9] mb-8"
           >
             Turn your data <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-600 italic font-light">into action.</span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-neutral-600 to-neutral-600 dark:from-neutral-400 dark:to-neutral-600 italic font-light">into action.</span>
           </motion.h1>
 
           <motion.p
@@ -95,10 +95,10 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
-            className="relative p-1 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 shadow-2xl shadow-purple-500/20 w-full max-w-3xl mb-12"
+            className="relative p-1 rounded-full bg-gradient-to-r from-neutral-500 to-neutral-500 shadow-2xl shadow-neutral-500/20 w-full max-w-3xl mb-12"
           >
             <div className="bg-white dark:bg-neutral-950 rounded-full p-3 md:p-4 flex items-center gap-3 md:gap-4 border border-transparent">
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-neutral-100 dark:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 flex items-center justify-center shrink-0">
                 <Sparkles className="w-4 h-4 md:w-5 md:h-5" />
               </div>
               <div className="text-left flex-1 overflow-hidden">
@@ -106,7 +106,7 @@ export default function LandingPage() {
                   <TypewriterText text="Analyze my recent commits and block 2 hours for deep work..." delay={800} />
                 </p>
               </div>
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0 cursor-pointer hover:scale-110 transition-transform shadow-md shadow-purple-500/30">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-neutral-600 text-white flex items-center justify-center shrink-0 cursor-pointer hover:scale-110 transition-transform shadow-md shadow-neutral-500/30">
                 <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
               </div>
             </div>
@@ -117,7 +117,7 @@ export default function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.6 }}
           >
-            <Link to="/login" className="inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold bg-purple-600 hover:bg-purple-500 text-white rounded-full hover:scale-105 transition-all shadow-lg shadow-purple-500/25">
+            <Link to="/login" className="inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold bg-neutral-600 hover:bg-neutral-500 text-white rounded-full hover:scale-105 transition-all shadow-lg shadow-neutral-500/25">
               Start Executing <ArrowRight className="w-5 h-5" />
             </Link>
           </motion.div>
@@ -142,11 +142,11 @@ export default function LandingPage() {
               { icon: BrainCircuit, title: "Understand", desc: "Our AI reads the context of your code to find exactly what you need to learn next.", color: "purple" },
               { icon: Zap, title: "Execute", desc: "UpLink automatically pushes personalized tasks and focus blocks to your calendar.", color: "amber" }
             ].map((feature, idx) => (
-              <div key={idx} className="group flex flex-col items-center text-center p-8 rounded-3xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 hover:border-purple-500/50 dark:hover:border-purple-500/50 transition-all shadow-sm hover:shadow-md dark:shadow-none">
+              <div key={idx} className="group flex flex-col items-center text-center p-8 rounded-3xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 hover:border-neutral-500/50 dark:hover:border-neutral-500/50 transition-all shadow-sm hover:shadow-md dark:shadow-none">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 transition-transform group-hover:scale-110 ${
-                  feature.color === 'blue' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                  feature.color === 'purple' ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' :
-                  'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                  feature.color === 'blue' ? 'bg-neutral-100 dark:bg-neutral-500/10 text-neutral-600 dark:text-neutral-400' :
+                  feature.color === 'purple' ? 'bg-neutral-100 dark:bg-neutral-500/10 text-neutral-600 dark:text-neutral-400' :
+                  'bg-neutral-100 dark:bg-neutral-500/10 text-neutral-600 dark:text-neutral-400'
                 }`}>
                   <feature.icon className="w-6 h-6" />
                 </div>
@@ -162,12 +162,12 @@ export default function LandingPage() {
       <section className="relative bg-neutral-900 text-white dark:bg-neutral-950 dark:text-white py-32 overflow-hidden z-20 border-t border-neutral-800">
         {/* Decorative background elements */}
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-purple-600/20 blur-[120px] rounded-full pointer-events-none"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-neutral-600/20 blur-[120px] rounded-full pointer-events-none"></div>
 
         <div className="max-w-4xl mx-auto px-6 relative z-10 text-center">
           <h2 className="text-4xl md:text-6xl font-bold mb-6 tracking-tighter leading-[1.1]">
             Stop planning. <br/>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 italic font-light">Start shipping.</span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-neutral-400 to-neutral-400 italic font-light">Start shipping.</span>
           </h2>
           <p className="text-lg md:text-xl text-neutral-400 leading-relaxed mb-10 max-w-xl mx-auto">
             Join the developers building unstoppable momentum with UpLink.

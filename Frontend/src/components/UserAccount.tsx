@@ -32,7 +32,7 @@ export default function UserAccount() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center w-10 h-10 rounded-full border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden focus:outline-none transition-all hover:border-purple-500/50"
+        className="flex items-center justify-center w-10 h-10 rounded-full border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden focus:outline-none transition-all hover:border-neutral-500/50"
       >
         {user.photoURL ? (
           <img src={user.photoURL} alt={user.displayName || "User"} className="w-full h-full object-cover" />
@@ -77,7 +77,7 @@ export default function UserAccount() {
                 </button>
                 <button
                   onClick={handleSignOut}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-600 dark:text-neutral-400 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-500/10 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   Sign Out

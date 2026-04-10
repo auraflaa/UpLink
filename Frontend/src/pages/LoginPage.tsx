@@ -60,7 +60,7 @@ export default function LoginPage() {
             opacity: [0.3, 0.5, 0.3],
           }}
           transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-400/30 dark:bg-purple-600/30 rounded-full blur-[100px]"
+          className="absolute top-1/4 left-1/4 w-96 h-96 bg-neutral-400/30 dark:bg-neutral-600/30 rounded-full blur-[100px]"
         />
         <motion.div
           animate={{
@@ -68,12 +68,12 @@ export default function LoginPage() {
             opacity: [0.2, 0.4, 0.2],
           }}
           transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-400/20 dark:bg-blue-600/20 rounded-full blur-[100px]"
+          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-neutral-400/20 dark:bg-neutral-600/20 rounded-full blur-[100px]"
         />
 
         {/* Content */}
         <div className="relative z-10 p-12 max-w-xl">
-          <Link to="/" className="text-4xl font-bold tracking-tighter text-purple-600 dark:text-purple-400 mb-12 block hover:opacity-80 transition-opacity">
+          <Link to="/" className="text-4xl font-bold tracking-tighter text-neutral-600 dark:text-neutral-400 mb-12 block hover:opacity-80 transition-opacity">
             UpLink
           </Link>
           
@@ -82,13 +82,13 @@ export default function LoginPage() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.8, delay: 0.2 }}
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-sm font-medium mb-6 border border-purple-200 dark:border-purple-500/20">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-100 dark:bg-neutral-500/10 text-neutral-700 dark:text-neutral-400 text-sm font-medium mb-6 border border-neutral-200 dark:border-neutral-500/20">
               <Sparkles className="w-4 h-4" />
               <span>The future of student productivity</span>
             </div>
             <h2 className="text-5xl font-bold text-neutral-900 dark:text-white mb-6 leading-tight">
               Connect your <br/>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-600">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-neutral-600 to-neutral-600 dark:from-neutral-400 dark:to-neutral-600">
                 fragmented progress.
               </span>
             </h2>
@@ -102,7 +102,7 @@ export default function LoginPage() {
       {/* Right Side - Form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative bg-neutral-50 dark:bg-neutral-950 transition-colors duration-300">
         {/* Mobile Logo */}
-        <Link to="/" className="lg:hidden absolute top-8 left-8 text-2xl font-bold tracking-tighter text-purple-600 dark:text-purple-400">
+        <Link to="/" className="lg:hidden absolute top-8 left-8 text-2xl font-bold tracking-tighter text-neutral-600 dark:text-neutral-400">
           UpLink
         </Link>
 
@@ -156,7 +156,7 @@ export default function LoginPage() {
                   required
                   onFocus={() => setFocusedInput('email')}
                   onBlur={() => setFocusedInput(null)}
-                  className="w-full bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-3.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all shadow-sm dark:shadow-none"
+                  className="w-full bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-3.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50 focus:border-neutral-500 transition-all shadow-sm dark:shadow-none"
                   placeholder="you@example.com"
                 />
               </div>
@@ -167,7 +167,7 @@ export default function LoginPage() {
                 <label className="block text-sm font-medium text-neutral-600 dark:text-neutral-400 transition-colors" style={{ color: focusedInput === 'password' ? '#c084fc' : undefined }}>
                   Password
                 </label>
-                <a href="#" className="text-sm text-purple-600 dark:text-purple-400 hover:text-purple-500 dark:hover:text-purple-300 transition-colors">Forgot password?</a>
+                <a href="#" className="text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-500 dark:hover:text-neutral-300 transition-colors">Forgot password?</a>
               </div>
               <div className="relative">
                 <input 
@@ -175,7 +175,7 @@ export default function LoginPage() {
                   required
                   onFocus={() => setFocusedInput('password')}
                   onBlur={() => setFocusedInput(null)}
-                  className="w-full bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-3.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all shadow-sm dark:shadow-none"
+                  className="w-full bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-3.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500/50 focus:border-neutral-500 transition-all shadow-sm dark:shadow-none"
                   placeholder="••••••••"
                 />
               </div>
@@ -187,7 +187,7 @@ export default function LoginPage() {
                 whileTap={{ scale: 0.98 }}
                 type="submit"
                 disabled={isLoading}
-                className="relative w-full bg-purple-600 hover:bg-purple-500 text-white py-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-70 overflow-hidden group shadow-lg shadow-purple-500/20"
+                className="relative w-full bg-neutral-600 hover:bg-neutral-500 text-white py-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-70 overflow-hidden group shadow-lg shadow-neutral-500/20"
               >
                 {/* Button Hover Effect Background */}
                 <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]" />
@@ -202,7 +202,7 @@ export default function LoginPage() {
           </form>
           
           <motion.p variants={itemVariants} className="text-center mt-8 text-neutral-500 text-sm">
-            Don't have an account? <a href="#" className="text-purple-600 dark:text-purple-400 hover:text-purple-500 dark:hover:text-purple-300 transition-colors font-medium">Sign up for free</a>
+            Don't have an account? <a href="#" className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-500 dark:hover:text-neutral-300 transition-colors font-medium">Sign up for free</a>
           </motion.p>
         </motion.div>
       </div>
