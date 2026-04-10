@@ -40,6 +40,16 @@ body.dark {
   background-attachment: fixed;
 }
 
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input, textarea {
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
