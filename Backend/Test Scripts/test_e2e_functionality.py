@@ -114,7 +114,7 @@ def run_tests():
         }
         r = requests.post(f"{RAG_API_URL}/chat", json=chat_payload)
         r.raise_for_status()
-        answer = r.json().get("response", "")
+        answer = r.json().get("answer", "")
         
         console.print("\n[bold]Gemini Pipeline Response:[/bold]")
         console.print(Panel(answer, border_style="green"))

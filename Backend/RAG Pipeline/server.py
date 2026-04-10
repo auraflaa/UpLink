@@ -217,7 +217,7 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
         # 6. Compile context from project knowledge
         project_context = "\n\n".join([
-            f"File: {r['payload'].get('filename', 'unknown')}\n{r['payload'].get('summary', '')}"
+            f"Source: {r['payload'].get('filename', 'unknown')}\n{r['payload'].get('text', r['payload'].get('summary', ''))}"
             for r in project_search
         ])
 
