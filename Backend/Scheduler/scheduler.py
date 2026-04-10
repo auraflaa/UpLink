@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import heapq
+import hashlib
 import json
 import os
+import secrets
+import ssl
 import threading
 import time
 import uuid
@@ -18,6 +21,8 @@ DEFAULT_HOST = os.getenv("SCHEDULER_HOST", "0.0.0.0")
 DEFAULT_PORT = int(os.getenv("SCHEDULER_PORT", "8002"))
 CREDENTIALS_PATH = os.path.join(os.path.dirname(__file__), "calendar_credentials.json")
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+TELEGRAM_LINKS_PATH = os.path.join(os.path.dirname(__file__), "telegram_links.json")
+TELEGRAM_LINK_TOKENS_PATH = os.path.join(os.path.dirname(__file__), "telegram_link_tokens.json")
 
 
 def _parse_datetime(value: str | datetime | None) -> datetime:
@@ -80,6 +85,190 @@ def _load_dotenv(path: str) -> dict[str, str]:
     return loaded
 
 
+def _get_env_setting(*keys: str) -> str | None:
+    for key in keys:
+        value = os.getenv(key)
+        if value:
+            return value
+
+    env_settings = _load_dotenv(ENV_PATH)
+    for key in keys:
+        value = env_settings.get(key)
+        if value:
+            return value
+
+    return None
+
+
+def _build_ssl_context() -> ssl.SSLContext:
+    cafile = _get_env_setting("TELEGRAM_CA_BUNDLE", "SSL_CERT_FILE")
+    if cafile:
+        return ssl.create_default_context(cafile=cafile)
+
+    allow_insecure = str(_get_env_setting("TELEGRAM_ALLOW_INSECURE_SSL") or "").strip().lower()
+    if allow_insecure in {"1", "true", "yes"}:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+
+    return ssl.create_default_context()
+
+
+def _load_json_file(path: str, default: Any) -> Any:
+    if not os.path.exists(path):
+        return default
+
+    with open(path, "r", encoding="utf-8") as file:
+        raw = file.read().strip()
+
+    if not raw:
+        return default
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return default
+
+
+def _save_json_file(path: str, payload: Any) -> None:
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2)
+
+
+class TelegramLinkStore:
+    """Stores pending link tokens and resolved Telegram chat mappings."""
+
+    def __init__(
+        self,
+        links_path: str = TELEGRAM_LINKS_PATH,
+        tokens_path: str = TELEGRAM_LINK_TOKENS_PATH,
+    ) -> None:
+        self.links_path = links_path
+        self.tokens_path = tokens_path
+        self._lock = threading.RLock()
+
+    def create_link_token(self, user_id: str, expires_in_minutes: int = 15) -> dict[str, Any]:
+        normalized_user_id = str(user_id).strip()
+        if not normalized_user_id:
+            raise ValueError("user_id is required to create a Telegram link token.")
+
+        token = secrets.token_urlsafe(24)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=max(1, expires_in_minutes))
+        token_record = {
+            "token": token,
+            "token_hash": self._hash_token(token),
+            "user_id": normalized_user_id,
+            "expires_at": _isoformat(expires_at),
+            "created_at": _isoformat(datetime.now(timezone.utc)),
+        }
+
+        with self._lock:
+            tokens = self._load_tokens()
+            self._cleanup_tokens(tokens)
+            tokens[token_record["token_hash"]] = token_record
+            _save_json_file(self.tokens_path, tokens)
+
+        bot_username = _get_env_setting("TELEGRAM_BOT_USERNAME", "BOT_USERNAME")
+        return {
+            "status": "token_created",
+            "user_id": normalized_user_id,
+            "token": token,
+            "expires_at": token_record["expires_at"],
+            "deep_link": f"https://t.me/{bot_username}?start={token}" if bot_username else None,
+        }
+
+    def consume_start_token(self, token: str, update: dict[str, Any]) -> dict[str, Any]:
+        token_hash = self._hash_token(token)
+        chat = update.get("message", {}).get("chat", {})
+        sender = update.get("message", {}).get("from", {})
+        chat_id = chat.get("id")
+        if chat_id is None:
+            raise ValueError("Telegram update did not include a chat ID.")
+
+        with self._lock:
+            tokens = self._load_tokens()
+            self._cleanup_tokens(tokens)
+            token_record = tokens.get(token_hash)
+            if not token_record:
+                raise ValueError("Invalid or expired Telegram link token.")
+
+            links = self._load_links()
+            links[token_record["user_id"]] = {
+                "user_id": token_record["user_id"],
+                "telegram_chat_id": str(chat_id),
+                "telegram_from_id": str(sender.get("id") or ""),
+                "telegram_username": sender.get("username"),
+                "telegram_first_name": sender.get("first_name"),
+                "linked_at": _isoformat(datetime.now(timezone.utc)),
+            }
+            tokens.pop(token_hash, None)
+            _save_json_file(self.links_path, links)
+            _save_json_file(self.tokens_path, tokens)
+
+        return {
+            "status": "linked",
+            "user_id": token_record["user_id"],
+            "telegram_chat_id": str(chat_id),
+            "telegram_username": sender.get("username"),
+        }
+
+    def get_link(self, user_id: str) -> dict[str, Any] | None:
+        normalized_user_id = str(user_id).strip()
+        if not normalized_user_id:
+            return None
+
+        with self._lock:
+            links = self._load_links()
+            link = links.get(normalized_user_id)
+            return dict(link) if link else None
+
+    def resolve_chat_id(self, metadata: dict[str, Any]) -> str | None:
+        explicit_chat_id = metadata.get("telegram_chat_id")
+        if explicit_chat_id:
+            return str(explicit_chat_id)
+
+        user_id = (
+            metadata.get("user_id")
+            or metadata.get("app_user_id")
+            or metadata.get("owner_id")
+        )
+        if not user_id:
+            return None
+
+        link = self.get_link(str(user_id))
+        if not link:
+            return None
+        return str(link.get("telegram_chat_id") or "")
+
+    def _load_links(self) -> dict[str, Any]:
+        loaded = _load_json_file(self.links_path, {})
+        return loaded if isinstance(loaded, dict) else {}
+
+    def _load_tokens(self) -> dict[str, Any]:
+        loaded = _load_json_file(self.tokens_path, {})
+        return loaded if isinstance(loaded, dict) else {}
+
+    @staticmethod
+    def _hash_token(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _cleanup_tokens(tokens: dict[str, Any]) -> None:
+        now = datetime.now(timezone.utc)
+        expired = []
+        for token_hash, token_record in tokens.items():
+            expires_at = token_record.get("expires_at")
+            if not expires_at:
+                expired.append(token_hash)
+                continue
+            if _parse_datetime(expires_at) <= now:
+                expired.append(token_hash)
+
+        for token_hash in expired:
+            tokens.pop(token_hash, None)
+
+
 @dataclass(slots=True)
 class ScheduledAction:
     action_id: str
@@ -137,6 +326,7 @@ class SchedulerEngine:
 
     def __init__(self) -> None:
         self.jobs: dict[str, ScheduledJob] = {}
+        self.telegram_links = TelegramLinkStore()
         self._queue: list[tuple[float, int, ScheduledAction]] = []
         self._sequence = 0
         self._lock = threading.RLock()
@@ -244,6 +434,48 @@ class SchedulerEngine:
             self._wakeup.notify_all()
         self._worker.join(timeout=5)
 
+    def create_telegram_link_token(self, payload: dict[str, Any]) -> dict[str, Any]:
+        user_id = str(payload.get("user_id") or payload.get("app_user_id") or payload.get("owner_id") or "").strip()
+        expires_in_minutes = int(payload.get("expires_in_minutes") or 15)
+        result = self.telegram_links.create_link_token(user_id, expires_in_minutes=expires_in_minutes)
+        existing_link = self.telegram_links.get_link(user_id)
+        if existing_link:
+            result["existing_link"] = existing_link
+        return result
+
+    def process_telegram_update(self, payload: dict[str, Any]) -> dict[str, Any]:
+        message = payload.get("message") or payload.get("edited_message") or {}
+        text = str(message.get("text") or "").strip()
+        if not text:
+            return {"status": "ignored", "reason": "missing_message_text"}
+
+        if not text.startswith("/start"):
+            return {"status": "ignored", "reason": "unsupported_message"}
+
+        _, _, raw_token = text.partition(" ")
+        token = raw_token.strip()
+        if not token:
+            return {"status": "ignored", "reason": "missing_start_token"}
+
+        start_update = {"message": message}
+        link_result = self.telegram_links.consume_start_token(token, start_update)
+        confirmation = self._send_direct_telegram_message(
+            chat_id=link_result["telegram_chat_id"],
+            text="Telegram notifications are now linked to your UpLink account.",
+            parse_mode=None,
+        )
+        return {
+            "status": "processed",
+            "link_result": link_result,
+            "confirmation": confirmation,
+        }
+
+    def get_telegram_link(self, user_id: str) -> dict[str, Any]:
+        link = self.telegram_links.get_link(user_id)
+        if not link:
+            raise KeyError(user_id)
+        return link
+
     def _enqueue_action(
         self,
         job: ScheduledJob,
@@ -314,23 +546,16 @@ class SchedulerEngine:
         }
 
     def _send_telegram(self, job: ScheduledJob, action: ScheduledAction) -> dict[str, Any]:
-        env_settings = _load_dotenv(ENV_PATH)
         token = (
-            os.getenv("TELEGRAM_BOT_TOKEN")
-            or env_settings.get("TELEGRAM_BOT_TOKEN")
-            or env_settings.get("BOT_TOKEN")
-            or env_settings.get("TELEGRAM_TOKEN")
+            _get_env_setting("TELEGRAM_BOT_TOKEN", "BOT_TOKEN", "TELEGRAM_TOKEN")
         )
         chat_id = (
-            job.metadata.get("telegram_chat_id")
-            or os.getenv("TELEGRAM_CHAT_ID")
-            or env_settings.get("TELEGRAM_CHAT_ID")
-            or env_settings.get("CHAT_ID")
+            self.telegram_links.resolve_chat_id(job.metadata)
+            or _get_env_setting("TELEGRAM_CHAT_ID", "CHAT_ID")
         )
         parse_mode = (
             str(job.metadata.get("telegram_parse_mode") or "").strip()
-            or os.getenv("TELEGRAM_PARSE_MODE")
-            or env_settings.get("TELEGRAM_PARSE_MODE")
+            or _get_env_setting("TELEGRAM_PARSE_MODE")
             or "Markdown"
         )
         message = self._build_telegram_message(job, action)
@@ -350,12 +575,30 @@ class SchedulerEngine:
                 "message": message,
             }
 
+        return self._send_direct_telegram_message(str(chat_id), message, parse_mode=parse_mode)
+
+    def _send_direct_telegram_message(
+        self,
+        chat_id: str,
+        text: str,
+        parse_mode: str | None,
+    ) -> dict[str, Any]:
+        token = _get_env_setting("TELEGRAM_BOT_TOKEN", "BOT_TOKEN", "TELEGRAM_TOKEN")
+        if not token:
+            return {
+                "channel": "telegram",
+                "status": "skipped",
+                "reason": "missing_telegram_bot_token",
+            }
+
         payload = {
             "chat_id": str(chat_id),
-            "text": message,
-            "parse_mode": parse_mode,
+            "text": text,
             "disable_web_page_preview": True,
         }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+
         req = request.Request(
             url=f"https://api.telegram.org/bot{token}/sendMessage",
             data=json.dumps(payload).encode("utf-8"),
@@ -364,7 +607,7 @@ class SchedulerEngine:
         )
 
         try:
-            with request.urlopen(req, timeout=10) as response:
+            with request.urlopen(req, timeout=10, context=_build_ssl_context()) as response:
                 response_payload = json.loads(response.read().decode("utf-8"))
                 telegram_result = response_payload.get("result", {})
                 return {
@@ -596,6 +839,11 @@ class SchedulerRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"jobs": self.engine.list_jobs()})
                 return
 
+            if self.path.startswith("/telegram/links/"):
+                user_id = self.path.removeprefix("/telegram/links/")
+                self._send_json({"link": self.engine.get_telegram_link(user_id)})
+                return
+
             if self.path.startswith("/jobs/"):
                 job_id = self.path.removeprefix("/jobs/")
                 self._send_json({"job": self.engine.get_job(job_id)})
@@ -611,6 +859,18 @@ class SchedulerRequestHandler(BaseHTTPRequestHandler):
                 payload = self._read_json()
                 result = self.engine.schedule(payload)
                 self._send_json(result, status=HTTPStatus.ACCEPTED)
+                return
+
+            if self.path == "/telegram/link-token":
+                payload = self._read_json()
+                result = self.engine.create_telegram_link_token(payload)
+                self._send_json(result, status=HTTPStatus.CREATED)
+                return
+
+            if self.path == "/telegram/update":
+                payload = self._read_json()
+                result = self.engine.process_telegram_update(payload)
+                self._send_json(result, status=HTTPStatus.OK)
                 return
 
             if self.path.endswith("/cancel") and self.path.startswith("/jobs/"):
