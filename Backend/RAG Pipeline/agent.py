@@ -112,72 +112,75 @@ class RAGPipelineAgent:
             try:
                 print(f"\n[🚀] [PARALLEL] GitHub Pipeline starting analysis: {repo_url}")
 
-            # 1. Recursive tree scan
-            t0 = self.time.perf_counter()
-            tree_resp = self.scanner.get_recursive_tree(repo_url)
-            full_tree = [t['path'] for t in tree_resp.get('tree', []) if t['type'] == 'blob']
-            self.telemetry["github"]['tree_scan_ms'] = (self.time.perf_counter() - t0) * 1000
-            print(f"[*] Repository tree fetched. {len(full_tree)} files found (post-filter).")
-            if not full_tree:
-                print("[!] Full tree is empty after filtering. Check ignore_list.")
+                # 1. Recursive tree scan
+                t0 = self.time.perf_counter()
+                tree_resp = self.scanner.get_recursive_tree(repo_url)
+                full_tree = [t['path'] for t in tree_resp.get('tree', []) if t['type'] == 'blob']
+                self.telemetry["github"]['tree_scan_ms'] = (self.time.perf_counter() - t0) * 1000
+                print(f"[*] Repository tree fetched. {len(full_tree)} files found (post-filter).")
+                if not full_tree:
+                    print("[!] Full tree is empty after filtering. Check ignore_list.")
 
-            # 2. LLM decides which files are most valuable
-            t0 = self.time.perf_counter()
-            print("[*] Requesting file selection from LLM...")
-            # Limit selection to 7 core files for token efficiency
-            files_to_read = self.llm.select_key_files(full_tree)[:7]
-            self.telemetry["github"]['file_selection_ms'] = (self.time.perf_counter() - t0) * 1000
-            print(f"[*] LLM selected {len(files_to_read)} files for summarisation (Capped at 7).")
+                # 2. LLM decides which files are most valuable
+                t0 = self.time.perf_counter()
+                print("[*] Requesting file selection from LLM...")
+                # Limit selection to 7 core files for token efficiency
+                files_to_read = self.llm.select_key_files(full_tree)[:7]
+                self.telemetry["github"]['file_selection_ms'] = (self.time.perf_counter() - t0) * 1000
+                print(f"[*] LLM selected {len(files_to_read)} files for summarisation (Capped at 7).")
 
-            if not files_to_read:
-                # Deterministic fallback
-                candidates = ["README.md", "README", "package.json", "requirements.txt", "main.py", "Backend/requirements.txt"]
-                files_to_read = [f for f in candidates if f in full_tree]
-                print(f"[!] LLM selection failed or returned empty. Using fallback: {files_to_read}")
+                if not files_to_read:
+                    # Deterministic fallback
+                    candidates = ["README.md", "README", "package.json", "requirements.txt", "main.py", "Backend/requirements.txt"]
+                    files_to_read = [f for f in candidates if f in full_tree]
+                    print(f"[!] LLM selection failed or returned empty. Using fallback: {files_to_read}")
 
-            # 3. Fetch file contents and summarise (BATCHED)
-            t0 = self.time.perf_counter()
-            files_to_summarize = []
-            for file_path in files_to_read:
-                print(f"[*] Fetching: {file_path}")
-                content = self.scanner.get_file_content(repo_url, file_path)
-                if content:
-                    files_to_summarize.append({"filename": file_path, "content": content})
+                # 3. Fetch file contents and summarise (BATCHED)
+                t0 = self.time.perf_counter()
+                files_to_summarize = []
+                for file_path in files_to_read:
+                    print(f"[*] Fetching: {file_path}")
+                    content = self.scanner.get_file_content(repo_url, file_path)
+                    if content:
+                        files_to_summarize.append({"filename": file_path, "content": content})
 
-            print(f"[*] Sending batch summarisation request for {len(files_to_summarize)} files...")
-            batch_results = self.llm.summarise_batch(files_to_summarize)
-            
-            summaries = []
-            for file_path, summary in batch_results.items():
-                summaries.append({
-                    "filename": file_path,
-                    "summary": summary,
-                    "source_url": repo_url,
-                    "source_type": "github"
-                })
-            
-            self.telemetry["github"]['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
+                print(f"[*] Sending batch summarisation request for {len(files_to_summarize)} files...")
+                batch_results = self.llm.summarise_batch(files_to_summarize)
+                
+                summaries = []
+                for file_path, summary in batch_results.items():
+                    summaries.append({
+                        "filename": file_path,
+                        "summary": summary,
+                        "source_url": repo_url,
+                        "source_type": "github"
+                    })
+                
+                self.telemetry["github"]['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
 
-            if not summaries:
-                print("[!] No summaries generated. Analysis aborted.")
+                if not summaries:
+                    print("[!] No summaries generated. Analysis aborted.")
+                    return None
+
+                # 4. Clear ALL existing knowledge of this type (Singleton Constraint)
+                print(f"[*] Enforcing singleton limit: Clearing all previous 'github' data...")
+                self._clear_previous_source_data(collection_name, "github")
+
+                t0 = self.time.perf_counter()
+                print(f"[*] Indexing {len(summaries)} summaries into '{collection_name}'...")
+                self._index_summaries(summaries, collection_name)
+                self.telemetry["github"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
+                
+                print(f"[✅] Analysis complete. RAG Pipeline indexed {len(summaries)} files.")
+                return summaries
+            except Exception as e:
+                print(f"[❌] CRITICAL ERROR during analysis: {e}")
+                import traceback
+                traceback.print_exc()
                 return None
+            finally:
+                self.telemetry["github"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
 
-            # 4. Clear ALL existing knowledge of this type (Singleton Constraint)
-            print(f"[*] Enforcing singleton limit: Clearing all previous 'github' data...")
-            self._clear_previous_source_data(collection_name, "github")
-
-            t0 = self.time.perf_counter()
-            print(f"[*] Indexing {len(summaries)} summaries into '{collection_name}'...")
-            self._index_summaries(summaries, collection_name)
-            self.telemetry["jira"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
-            
-            print(f"[✅] Analysis complete. RAG Pipeline indexed {len(summaries)} files.")
-            return summaries
-        except Exception as e:
-            print(f"[❌] CRITICAL ERROR during analysis: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
     def _analyze_jira(self, source_url: str, collection_name: str) -> Optional[List[Dict]]:
         """
         Fetches structured Jira data from the Scheduler and indexes it.
@@ -192,54 +195,56 @@ class RAGPipelineAgent:
             }
             scheduler_url = os.getenv("SCHEDULER_URL", "http://127.0.0.1:8002")
             print(f"[*] [PARALLEL] Starting JIRA analysis for: {source_url}")
+            
             try:
-            # 1. Fetch RAG-ready document from Scheduler
-            t0 = self.time.perf_counter()
-            res = requests.get(f"{scheduler_url}/jira/rag-document", params={"url": source_url}, timeout=30)
-            res.raise_for_status()
-            data = res.json()
-            
-            if data.get("status") != "completed":
-                print(f"[!] Scheduler Jira analysis failed: {data.get('message')}")
-                return None
+                # 1. Fetch RAG-ready document from Scheduler
+                t0 = self.time.perf_counter()
+                res = requests.get(f"{scheduler_url}/jira/rag-document", params={"url": source_url}, timeout=30)
+                res.raise_for_status()
+                data = res.json()
                 
-            rag_doc = data.get("rag_document")
-            self.telemetry["jira"]['jira_fetch_ms'] = (self.time.perf_counter() - t0) * 1000
-            
-            # 2. High-Reasoning Summarization (Just like GitHub!)
-            print(f"[*] Sending Jira data for Gemini summarisation...")
-            t0 = self.time.perf_counter()
-            file_obj = {
-                "filename": rag_doc.get("title", "Jira Task"),
-                "content": rag_doc.get("content", "")
-            }
-            batch_results = self.llm.summarise_batch([file_obj])
-            llm_summary = list(batch_results.values())[0] if batch_results else "Summary unavailable."
-            self.telemetry["jira"]['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
-            
-            # 3. Extract content for indexing
-            summary_entry = {
-                "filename": rag_doc.get("title", "Jira Document"),
-                "summary": llm_summary,
-                "source_url": source_url,
-                "source_type": "jira",
-                "metadata": rag_doc.get("metadata", {})
-            }
-            
-            # 4. Clear ALL existing knowledge of this type (Singleton Constraint)
-            print(f"[*] Enforcing singleton limit: Clearing all previous 'jira' data...")
-            self._clear_previous_source_data(collection_name, "jira")
-            
-            t0 = self.time.perf_counter()
-            self._index_summaries([summary_entry], collection_name)
-            self.telemetry["jira"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
-            
-            print(f"[✅] JIRA analysis complete for {source_url}.")
-            return [summary_entry]
-            
-        except Exception as e:
-            print(f"[❌] Error during JIRA analysis: {e}")
-            return None
+                if data.get("status") != "completed":
+                    print(f"[!] Scheduler Jira analysis failed: {data.get('message')}")
+                    return None
+                    
+                rag_doc = data.get("rag_document")
+                self.telemetry["jira"]['jira_fetch_ms'] = (self.time.perf_counter() - t0) * 1000
+                
+                # 2. High-Reasoning Summarization (Just like GitHub!)
+                print(f"[*] Sending Jira data for Gemini summarisation...")
+                t0 = self.time.perf_counter()
+                file_obj = {
+                    "filename": rag_doc.get("title", "Jira Task"),
+                    "content": rag_doc.get("content", "")
+                }
+                batch_results = self.llm.summarise_batch([file_obj])
+                llm_summary = list(batch_results.values())[0] if batch_results else "Summary unavailable."
+                self.telemetry["jira"]['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
+                
+                # 3. Extract content for indexing
+                summary_entry = {
+                    "filename": rag_doc.get("title", "Jira Document"),
+                    "summary": llm_summary,
+                    "source_url": source_url,
+                    "source_type": "jira",
+                    "metadata": rag_doc.get("metadata", {})
+                }
+                
+                # 4. Clear ALL existing knowledge of this type (Singleton Constraint)
+                print(f"[*] Enforcing singleton limit: Clearing all previous 'jira' data...")
+                self._clear_previous_source_data(collection_name, "jira")
+                
+                t0 = self.time.perf_counter()
+                self._index_summaries([summary_entry], collection_name)
+                self.telemetry["jira"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
+                
+                print(f"[✅] JIRA analysis complete for {source_url}.")
+                return [summary_entry]
+                
+            except Exception as e:
+                print(f"[❌] Error during JIRA analysis: {e}")
+                return None
+            finally:
                 self.telemetry["jira"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
 
     def _clear_previous_source_data(self, collection_name: str, source_type: str):
@@ -273,6 +278,30 @@ class RAGPipelineAgent:
         requests.put(f"{QDRANT_URL}/collections/{collection_name}/points", json={
             "points": points
         }).raise_for_status()
+
+        # --- Embedding Registry Tracker ---
+        if summaries:
+            registry_path = "embedding_registry.json"
+            registry = {}
+            if os.path.exists(registry_path):
+                try:
+                    with open(registry_path, "r", encoding="utf-8") as f:
+                        registry = json.load(f)
+                except Exception:
+                    pass
+            
+            import datetime
+            source_url = summaries[0].get("source_url", "unknown_url")
+            registry[source_url] = {
+                "source_type": summaries[0].get("source_type", "unknown"),
+                "indexed_items": len(summaries),
+                "last_embedded_utc": datetime.datetime.utcnow().isoformat(),
+                "collection": collection_name
+            }
+            
+            with open(registry_path, "w", encoding="utf-8") as f:
+                json.dump(registry, f, indent=4)
+            print(f"[*] Saved embedding payload to {registry_path}")
 
     # ------------------------------------------------------------------ #
     #  PHASE 2 — RAG Chat                                                  #

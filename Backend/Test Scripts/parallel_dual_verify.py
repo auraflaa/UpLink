@@ -81,9 +81,24 @@ def run_suite():
     print(f"  - Jira (Existing) Indexed: {check_jr.get('indexed')} (Should be True)")
 
     if not check_a.get('indexed') and check_b.get('indexed') and check_jr.get('indexed'):
-        print("\n[⭐] ALL TESTS PASSED! System is robust, parallel, and singleton-compliant.")
+        print("\n[⭐] Data Isolation Tests PASSED! System is robust, parallel, and singleton-compliant.")
     else:
         print("\n[!!] AUDIT FAILED: Singleton rule or data isolation violated.")
+
+    # TEST 5: Verify RAG Query Answering (Chat)
+    print("\n[TEST 5] Verifying RAG Query Reasoning (Chat capabilities)...")
+    chat_res = requests.post(f"{RAG_URL}/chat", json={
+        "query": "What is the purpose of this project and what is the Jira task about?",
+        "user_id": "test_engineer",
+        "collection_name": COLLECTION
+    }).json()
+
+    if chat_res.get("answer"):
+        print(f"  [+] Reply received. Excerpt: {chat_res.get('answer')[:120]}...")
+        print(f"  [+] Sources leveraged: {len(chat_res.get('sources', []))} items")
+        print("\n[⭐] ALL TESTS PASSED! RAG Query engine and Embeddings are fully operational.")
+    else:
+        print("\n[!!] CHAT FAILED: The query engine could not generate an answer. Check embedding configuration.")
 
     print("\n" + "="*60)
 

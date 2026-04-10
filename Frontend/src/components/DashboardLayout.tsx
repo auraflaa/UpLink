@@ -8,7 +8,6 @@ export default function DashboardLayout() {
 
   const navItems = [
     { href: "/home", label: "Dashboard" },
-    { href: "/builder", label: "App Studio" },
     { href: "/resume", label: "Documents" },
     { href: "/github", label: "Repo Analyzer" },
     { href: "/events", label: "Events" },

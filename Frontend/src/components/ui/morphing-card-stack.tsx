@@ -1,11 +1,8 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
-import { motion, AnimatePresence, LayoutGroup, type PanInfo } from "motion/react"
+import { motion, AnimatePresence, type PanInfo } from "motion/react"
 import { cn } from "@/src/lib/utils"
-import { Grid3X3, Layers, LayoutList } from "lucide-react"
-
-export type LayoutMode = "stack" | "grid" | "list"
 
 export interface CardData {
   id: string
@@ -18,14 +15,7 @@ export interface CardData {
 export interface MorphingCardStackProps {
   cards?: CardData[]
   className?: string
-  defaultLayout?: LayoutMode
   onCardClick?: (card: CardData) => void
-}
-
-const layoutIcons = {
-  stack: Layers,
-  grid: Grid3X3,
-  list: LayoutList,
 }
 
 const SWIPE_THRESHOLD = 50
@@ -33,11 +23,8 @@ const SWIPE_THRESHOLD = 50
 export function Component({
   cards = [],
   className,
-  defaultLayout = "stack",
   onCardClick,
 }: MorphingCardStackProps) {
-  const [layout, setLayout] = useState<LayoutMode>(defaultLayout)
-  const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [activeIndex, setActiveIndex] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -45,16 +32,12 @@ export function Component({
     return null
   }
 
-  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+  const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const { offset, velocity } = info
     const swipe = Math.abs(offset.x) * velocity.x
 
-    if (offset.x < -SWIPE_THRESHOLD || swipe < -1000) {
-      // Swiped left - go to next card
+    if (offset.x < -SWIPE_THRESHOLD || swipe < -1000 || offset.x > SWIPE_THRESHOLD || swipe > 1000) {
       setActiveIndex((prev) => (prev + 1) % cards.length)
-    } else if (offset.x > SWIPE_THRESHOLD || swipe > 1000) {
-      // Swiped right - go to previous card
-      setActiveIndex((prev) => (prev - 1 + cards.length) % cards.length)
     }
     setIsDragging(false)
   }
@@ -65,159 +48,97 @@ export function Component({
       const index = (activeIndex + i) % cards.length
       reordered.push({ ...cards[index], stackPosition: i })
     }
-    return reordered.reverse() // Reverse so top card renders last (on top)
+    return reordered.reverse()
   }
 
-  const getLayoutStyles = (stackPosition: number) => {
-    switch (layout) {
-      case "stack":
-        return {
-          top: stackPosition * 8,
-          left: stackPosition * 8,
-          zIndex: cards.length - stackPosition,
-          rotate: (stackPosition - 1) * 2,
-        }
-      case "grid":
-        return {
-          top: 0,
-          left: 0,
-          zIndex: 1,
-          rotate: 0,
-        }
-      case "list":
-        return {
-          top: 0,
-          left: 0,
-          zIndex: 1,
-          rotate: 0,
-        }
-    }
-  }
-
-  const containerStyles = {
-    stack: "relative h-64 w-64",
-    grid: "grid grid-cols-2 gap-3",
-    list: "flex flex-col gap-3",
-  }
-
-  const displayCards = layout === "stack" ? getStackOrder() : cards.map((c, i) => ({ ...c, stackPosition: i }))
+  const displayCards = getStackOrder()
 
   return (
-    <div className={cn("space-y-4", className)}>
-      {/* Layout Toggle */}
-      <div className="flex items-center justify-center gap-1 rounded-lg bg-neutral-100 dark:bg-neutral-800 p-1 w-fit mx-auto border border-neutral-200 dark:border-neutral-700">
-        {(Object.keys(layoutIcons) as LayoutMode[]).map((mode) => {
-          const Icon = layoutIcons[mode]
-          return (
-            <button
-              key={mode}
-              onClick={() => setLayout(mode)}
-              className={cn(
-                "rounded-md p-2 transition-all",
-                layout === mode
-                  ? "bg-white dark:bg-neutral-600 text-neutral-900 dark:text-white shadow-sm"
-                  : "text-neutral-500 hover:text-neutral-900 hover:bg-neutral-200 dark:hover:text-white dark:hover:bg-neutral-700",
-              )}
-              aria-label={`Switch to ${mode} layout`}
-            >
-              <Icon className="h-4 w-4" />
-            </button>
-          )
-        })}
+    <div className={cn("flex flex-col items-center", className)}>
+      {/* Stack Container */}
+      <div className="relative" style={{ width: 240, height: 220 }}>
+        <AnimatePresence mode="popLayout">
+          {displayCards.map((card) => {
+            const isTopCard = card.stackPosition === 0
+            const pos = card.stackPosition
+
+            return (
+              <motion.div
+                key={card.id}
+                layoutId={card.id}
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{
+                  opacity: pos > 3 ? 0 : 1,
+                  scale: 1,
+                  y: 0,
+                  x: pos * 8,
+                  zIndex: cards.length - pos,
+                  rotate: pos * 3,
+                }}
+                exit={{ opacity: 0, scale: 0.85, x: -200, rotate: -8 }}
+                transition={{
+                  type: "spring",
+                  stiffness: 320,
+                  damping: 26,
+                }}
+                drag={isTopCard ? "x" : false}
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.6}
+                onDragStart={() => setIsDragging(true)}
+                onDragEnd={handleDragEnd}
+                whileDrag={{ scale: 1.04, rotate: -3, cursor: "grabbing" }}
+                onClick={() => {
+                  if (isDragging) return
+                  if (isTopCard) {
+                    setActiveIndex((prev) => (prev + 1) % cards.length)
+                  }
+                  onCardClick?.(card)
+                }}
+                className={cn(
+                  "absolute top-0 left-0 rounded-2xl border border-neutral-200 dark:border-neutral-700/60 bg-white dark:bg-neutral-900 p-5 shadow-lg dark:shadow-xl",
+                  "transition-colors",
+                  isTopCard && "cursor-grab active:cursor-grabbing border-neutral-300 dark:border-neutral-600/60 hover:border-neutral-400 dark:hover:border-neutral-500/60",
+                )}
+                style={{
+                  width: 240,
+                  height: 200,
+                  backgroundColor: card.color || undefined,
+                }}
+              >
+                <div className="flex flex-col h-full">
+                  {card.icon && (
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 mb-3 border border-neutral-200 dark:border-neutral-700/50">
+                      {card.icon}
+                    </div>
+                  )}
+                  <h3 className="font-bold text-neutral-900 dark:text-white text-[15px] leading-tight">{card.title}</h3>
+                  <p className="text-[13px] text-neutral-500 dark:text-neutral-400 mt-1.5 leading-relaxed line-clamp-3">
+                    {card.description}
+                  </p>
+                  {isTopCard && (
+                    <p className="mt-auto text-[11px] text-neutral-400 dark:text-neutral-600 pt-3">
+                      Swipe to navigate
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
       </div>
 
-      {/* Cards Container */}
-      <LayoutGroup>
-        <motion.div layout className={cn(containerStyles[layout], "mx-auto")}>
-          <AnimatePresence mode="popLayout">
-            {displayCards.map((card) => {
-              const styles = getLayoutStyles(card.stackPosition)
-              const isExpanded = expandedCard === card.id
-              const isTopCard = layout === "stack" && card.stackPosition === 0
-
-              return (
-                <motion.div
-                  key={card.id}
-                  layoutId={card.id}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{
-                    opacity: 1,
-                    scale: isExpanded ? 1.05 : 1,
-                    x: 0,
-                    ...styles,
-                  }}
-                  exit={{ opacity: 0, scale: 0.8, x: -200 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 300,
-                    damping: 25,
-                  }}
-                  drag={isTopCard ? "x" : false}
-                  dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={0.7}
-                  onDragStart={() => setIsDragging(true)}
-                  onDragEnd={handleDragEnd}
-                  whileDrag={{ scale: 1.02, cursor: "grabbing" }}
-                  onClick={() => {
-                    if (isDragging) return
-                    setExpandedCard(isExpanded ? null : card.id)
-                    onCardClick?.(card)
-                  }}
-                  className={cn(
-                    "cursor-pointer rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 shadow-sm",
-                    "hover:border-neutral-500 dark:hover:border-neutral-500 transition-colors",
-                    layout === "stack" && "absolute w-56 h-48",
-                    layout === "stack" && isTopCard && "cursor-grab active:cursor-grabbing",
-                    layout === "grid" && "w-full aspect-square",
-                    layout === "list" && "w-full",
-                    isExpanded && "ring-2 ring-neutral-900 dark:ring-white",
-                  )}
-                  style={{
-                    backgroundColor: card.color || undefined,
-                  }}
-                >
-                  <div className="flex items-start gap-3">
-                    {card.icon && (
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white">
-                        {card.icon}
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-neutral-900 dark:text-white truncate">{card.title}</h3>
-                      <p
-                        className={cn(
-                          "text-sm text-neutral-500 dark:text-neutral-400 mt-1",
-                          layout === "stack" && "line-clamp-3",
-                          layout === "grid" && "line-clamp-2",
-                          layout === "list" && "line-clamp-1",
-                        )}
-                      >
-                        {card.description}
-                      </p>
-                    </div>
-                  </div>
-
-                  {isTopCard && (
-                    <div className="absolute bottom-2 left-0 right-0 text-center">
-                      <span className="text-xs text-neutral-400 dark:text-neutral-500 font-medium">Swipe to navigate</span>
-                    </div>
-                  )}
-                </motion.div>
-              )
-            })}
-          </AnimatePresence>
-        </motion.div>
-      </LayoutGroup>
-
-      {layout === "stack" && cards.length > 1 && (
-        <div className="flex justify-center gap-1.5 mt-8">
+      {/* Dot indicators */}
+      {cards.length > 1 && (
+        <div className="flex justify-center gap-1.5 mt-6">
           {cards.map((_, index) => (
             <button
               key={index}
               onClick={() => setActiveIndex(index)}
               className={cn(
-                "h-1.5 rounded-full transition-all",
-                index === activeIndex ? "w-4 bg-neutral-900 dark:bg-white" : "w-1.5 bg-neutral-300 dark:bg-neutral-700 hover:bg-neutral-400 dark:hover:bg-neutral-600",
+                "h-1.5 rounded-full transition-all duration-300",
+                index === activeIndex
+                  ? "w-5 bg-neutral-800 dark:bg-white"
+                  : "w-1.5 bg-neutral-300 dark:bg-neutral-700 hover:bg-neutral-400 dark:hover:bg-neutral-600",
               )}
               aria-label={`Go to card ${index + 1}`}
             />
