@@ -70,6 +70,15 @@ class GitHubScanner:
         res.raise_for_status()
         data = res.json()
 
+        # --- JUNK FILTER ---
+        ignore_list = {".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build", ".next"}
+        filtered_tree = [
+            item for item in data.get("tree", [])
+            if not any(part in ignore_list for part in item.get("path", "").split("/"))
+        ]
+        data["tree"] = filtered_tree
+        # -------------------
+
         if data.get("truncated"):
             print(f"[!] Repository tree truncated by GitHub API (>100k entries).")
 

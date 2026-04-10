@@ -7,8 +7,8 @@ from typing import List, Dict, Optional
 from tinydb import TinyDB, Query
 
 # Constants
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6366")
-EMBEDDING_URL = os.getenv("EMBEDDING_URL", "http://localhost:6377/embed")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://127.0.0.1:6366")
+EMBEDDING_URL = os.getenv("EMBEDDING_URL", "http://127.0.0.1:6377/embed")
 MEMORY_COLLECTION = "chat_memory"
 USER_DB_PATH = "user_sessions.json"
 
@@ -58,6 +58,12 @@ class MemoryStore:
                 requests.put(f"{QDRANT_URL}/collections/{MEMORY_COLLECTION}", json={
                     "vectors": {"size": 768, "distance": "Cosine"}
                 }, timeout=5)
+                # Add payload indexes for faster filtering
+                for field in ["user_id", "session_id"]:
+                    requests.put(f"{QDRANT_URL}/collections/{MEMORY_COLLECTION}/index", json={
+                        "field_name": field,
+                        "field_schema": "keyword"
+                    }, timeout=5)
         except requests.exceptions.ConnectionError:
             print(f"[!] Qdrant not reachable at startup — '{MEMORY_COLLECTION}' will be created on first use.")
         except Exception as e:
@@ -121,13 +127,16 @@ class MemoryStore:
         vector = embed_res.json().get("embeddings")[0]
 
         # 2. Search Qdrant with user_id filter
-        res = requests.post(f"{QDRANT_URL}/collections/{MEMORY_COLLECTION}/points/search", json={
-            "vector": vector,
-            "filter": {
-                "must": [{"key": "user_id", "match": {"value": user_id}}]
-            },
-            "limit": limit,
-            "with_payload": True
-        })
-        
-        return [r['payload'] for r in res.json().get("result", [])]
+        try:
+            res = requests.post(f"{QDRANT_URL}/collections/{MEMORY_COLLECTION}/points/search", json={
+                "vector": vector,
+                "filter": {
+                    "must": [{"key": "user_id", "match": {"value": user_id}}]
+                },
+                "limit": limit,
+                "with_payload": True
+            }, timeout=2)
+            return [r['payload'] for r in res.json().get("result", [])]
+        except Exception as e:
+            print(f"[!] Long-term memory search skipped (Timeout/Error): {e}")
+            return []
