@@ -1,42 +1,101 @@
-import { useState } from "react";
-import { motion } from "motion/react";
-import { Calendar, MapPin, Clock, ExternalLink, Trophy, Search } from "lucide-react";
+import { useState, useEffect, FormEvent } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Calendar, MapPin, Clock, ExternalLink, Trophy, Search, X, Loader2 } from "lucide-react";
 
 export default function EventsPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [events, setEvents] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const events = [
+  // Form State
+  const [newTitle, setNewTitle] = useState("");
+  const [newType, setNewType] = useState("Hackathon");
+  const [newDate, setNewDate] = useState("");
+  const [newLocation, setNewLocation] = useState("");
+
+  const fetchEvents = async () => {
+    try {
+      const response = await fetch("/api/scheduler/jobs");
+      if (response.ok) {
+        const data = await response.json();
+        const formattedEvents = data.jobs.map((job: any) => ({
+          id: job.job_id,
+          title: job.title,
+          date: new Date(job.execute_at).toLocaleDateString(undefined, {
+             year: 'numeric', month: 'short', day: 'numeric'
+          }),
+          time: new Date(job.execute_at).toLocaleTimeString(undefined, {
+             hour: '2-digit', minute: '2-digit'
+          }),
+          location: job.metadata?.location || "Unknown",
+          type: job.metadata?.type || "Event",
+          status: job.status === "scheduled" ? "Upcoming" : job.status,
+          color: job.metadata?.color || "purple",
+        }));
+        // Merge with initial default skeleton if backend empty
+        if (formattedEvents.length === 0) {
+            setEvents(defaultEvents);
+        } else {
+            setEvents(formattedEvents);
+        }
+      } else {
+        setEvents(defaultEvents);
+      }
+    } catch (err) {
+      console.error("Backend offline, using fallback data.");
+      setEvents(defaultEvents);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  const defaultEvents = [
     {
-      id: 1,
-      title: "Global AI Hackathon 2026",
-      date: "Oct 15 - Oct 17, 2026",
-      time: "48 Hours",
-      location: "Online",
-      type: "Hackathon",
-      status: "Upcoming",
-      color: "purple"
+      id: "1", title: "Global AI Hackathon 2026", date: "Oct 15, 2026", time: "09:00 AM", location: "Online", type: "Hackathon", status: "Upcoming", color: "purple"
     },
     {
-      id: 2,
-      title: "Web3 Builders Summit",
-      date: "Nov 02, 2026",
-      time: "10:00 AM EST",
-      location: "San Francisco, CA",
-      type: "Conference",
-      status: "Registration Open",
-      color: "blue"
-    },
-    {
-      id: 3,
-      title: "Open Source Contribution Month",
-      date: "Ends Nov 30, 2026",
-      time: "Ongoing",
-      location: "GitHub",
-      type: "Challenge",
-      status: "In Progress",
-      color: "emerald"
+      id: "2", title: "Web3 Builders Summit", date: "Nov 02, 2026", time: "10:00 AM", location: "San Francisco, CA", type: "Conference", status: "Registration Open", color: "blue"
     }
   ];
+
+  const handleAddEvent = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    
+    const payload = {
+        title: newTitle,
+        kind: "event",
+        execute_at: new Date(newDate).toISOString(),
+        metadata: {
+            location: newLocation,
+            type: newType,
+            color: newType === "Hackathon" ? "purple" : "emerald"
+        }
+    };
+
+    try {
+        await fetch("/api/scheduler/schedule", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        await fetchEvents(); // Refresh
+        setShowAddModal(false);
+        setNewTitle("");
+        setNewDate("");
+        setNewLocation("");
+    } catch (e) {
+        console.error("Failed to schedule:", e);
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
 
   const filteredEvents = events.filter(event => 
     event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -54,7 +113,10 @@ export default function EventsPage() {
           <h1 className="text-3xl font-bold mb-2 text-neutral-900 dark:text-white">Events & Momentum</h1>
           <p className="text-neutral-600 dark:text-neutral-400">Track hackathons, submission windows, and never miss an opportunity.</p>
         </div>
-        <button className="px-5 py-2.5 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-xl font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors whitespace-nowrap">
+        <button 
+          onClick={() => setShowAddModal(true)}
+          className="px-5 py-2.5 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-xl font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors whitespace-nowrap"
+        >
           + Add Custom Event
         </button>
       </header>
@@ -68,7 +130,7 @@ export default function EventsPage() {
             </div>
             <input
               type="text"
-              placeholder="Search events by name or type (e.g., Hackathon)..."
+              placeholder="Search events by name or type..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl pl-11 pr-4 py-3.5 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all shadow-sm dark:shadow-none"
@@ -76,7 +138,11 @@ export default function EventsPage() {
           </div>
 
           {/* Events List */}
-          {filteredEvents.length > 0 ? (
+          {isLoading ? (
+             <div className="flex justify-center py-20 text-neutral-400">
+               <Loader2 className="w-8 h-8 animate-spin" />
+             </div>
+          ) : filteredEvents.length > 0 ? (
             filteredEvents.map((event) => (
               <div key={event.id} className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-sm dark:shadow-none hover:border-purple-500/50 transition-colors group">
                 <div className="flex flex-col sm:flex-row justify-between gap-4 mb-4">
@@ -124,12 +190,6 @@ export default function EventsPage() {
               <p className="text-neutral-500 dark:text-neutral-400">
                 We couldn't find any events matching "{searchQuery}".
               </p>
-              <button 
-                onClick={() => setSearchQuery("")}
-                className="mt-4 px-4 py-2 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10 rounded-lg transition-colors"
-              >
-                Clear search
-              </button>
             </div>
           )}
         </div>
@@ -145,16 +205,58 @@ export default function EventsPage() {
             </div>
             <p className="text-purple-100 text-sm relative z-10">You're in the top 15% of active builders this month. Keep it up!</p>
           </div>
-
-          <div className="bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-sm dark:shadow-none">
-            <h3 className="text-lg font-semibold mb-4 text-neutral-900 dark:text-white">Calendar Integration</h3>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-6">Sync your UpLink events directly with your primary calendar to avoid cognitive overload.</p>
-            <button className="w-full py-2.5 border border-neutral-300 dark:border-neutral-700 rounded-xl text-sm font-medium hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors text-neutral-900 dark:text-white">
-              Connect Google Calendar
-            </button>
-          </div>
         </div>
       </div>
+
+      {/* Add Event Modal */}
+      <AnimatePresence>
+        {showAddModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-neutral-900 rounded-3xl p-6 shadow-2xl w-full max-w-md border border-neutral-200 dark:border-neutral-800"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold dark:text-white">Schedule Event</h2>
+                <button onClick={() => setShowAddModal(false)} className="text-neutral-500 hover:text-neutral-800 dark:hover:text-white">
+                  <X />
+                </button>
+              </div>
+              
+              <form onSubmit={handleAddEvent} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1 dark:text-neutral-300">Event Title</label>
+                  <input required type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none" placeholder="e.g. SF AI Hackathon" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1 dark:text-neutral-300">Type</label>
+                  <select value={newType} onChange={e => setNewType(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none">
+                    <option value="Hackathon">Hackathon</option>
+                    <option value="Conference">Conference</option>
+                    <option value="Deadline">Deadline</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1 dark:text-neutral-300">Date & Time</label>
+                  <input required type="datetime-local" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none" />
+                </div>
+                <div>
+                   <label className="block text-sm font-medium mb-1 dark:text-neutral-300">Location</label>
+                   <input required type="text" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="w-full bg-neutral-50 dark:bg-neutral-800 border-none rounded-xl px-4 py-3 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Online or City" />
+                </div>
+
+                <div className="pt-4 pt-2">
+                   <button disabled={isSubmitting} type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-xl py-3 font-medium transition-colors disabled:opacity-50 flex justify-center items-center">
+                     {isSubmitting ? <Loader2 className="animate-spin" /> : "Schedule & Sync"}
+                   </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
