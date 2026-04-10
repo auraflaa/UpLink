@@ -1,166 +1,84 @@
-import { GitBranch, FileText, Upload, Brain, Activity, Settings, Bell, Search, ChartPie } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { motion } from "motion/react";
+import { FileText, Github, Calendar } from "lucide-react";
+import { Link } from "react-router-dom";
 
-const HomePage = () => {
+export default function HomePage() {
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-black/50 backdrop-blur-3xl">
-      {/* Top Navigation */}
-      <header className="h-16 border-b border-white/10 flex items-center justify-between px-6 bg-black/20 backdrop-blur-md z-10">
-        <div className="flex items-center gap-2">
-          <Brain className="text-secondary" size={24} />
-          <span className="font-semibold tracking-wide">UpLink</span>
-        </div>
-        
-        <div className="flex flex-1 max-w-md mx-8">
-          <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search your repos, notes, and tasks..." 
-              className="w-full bg-white/5 border border-white/10 rounded-full pl-10 pr-4 py-1.5 text-sm text-white focus:outline-none focus:border-primary/50 transition-colors"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <button className="text-muted hover:text-white transition-colors relative">
-            <Bell size={20} />
-            <span className="absolute top-0 right-0 w-2 h-2 bg-primary rounded-full"></span>
-          </button>
-          <button className="text-muted hover:text-white transition-colors">
-            <Settings size={20} />
-          </button>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary p-[2px]">
-            <div className="w-full h-full bg-black rounded-full flex items-center justify-center">
-              <span className="text-xs font-bold">JD</span>
-            </div>
-          </div>
-        </div>
+    <>
+      <header className="mb-10">
+        <h1 className="text-3xl font-bold mb-2 text-neutral-900 dark:text-white">Welcome back, Student</h1>
+        <p className="text-neutral-600 dark:text-neutral-400">Here's what's happening with your projects today.</p>
       </header>
 
-      {/* Main Layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-64 border-r border-white/10 bg-black/20 p-4 flex flex-col gap-2 z-10 hidden md:flex">
-          <div className="text-xs text-muted font-semibold tracking-wider mb-2 ml-2">OVERVIEW</div>
-          <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-primary/10 text-primary font-medium">
-            <Activity size={18} /> Dashboard
-          </a>
-          <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-muted hover:bg-white/5 hover:text-white transition-colors">
-            <ChartPie size={18} /> Analytics Context
-          </a>
-          
-          <div className="text-xs text-muted font-semibold tracking-wider mt-6 mb-2 ml-2">DATA SOURCES</div>
-          <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-muted hover:bg-white/5 hover:text-white transition-colors">
-            <GitBranch size={18} /> GitHub Synced
-          </a>
-          <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-muted hover:bg-white/5 hover:text-white transition-colors">
-            <FileText size={18} /> Resumes & Notes
-          </a>
-        </aside>
-
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-8 relative">
-          <div className="animate-fade-in">
-            <div className="mb-10">
-              <h1 className="heading-lg mb-2">Welcome back, John.</h1>
-              <p className="text-muted text-lg">Your cognitive loop is active. Here's what needs attention today.</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Quick Actions / Modules */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="col-span-1 lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
+          {/* Resume Module */}
+          <Link to="/resume" className="group block bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 hover:border-purple-500/50 dark:hover:border-purple-500/50 transition-all shadow-sm hover:shadow-md dark:shadow-none">
+            <div className="w-12 h-12 bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <FileText className="w-6 h-6" />
             </div>
-            
-            {/* Core Modules Grid exactly as per the system architecture diagram */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-              
-              {/* GitHub Repo Analyzer Path */}
-              <div className="glass-panel p-8 text-left group cursor-pointer relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-bl-full -z-10 group-hover:bg-primary/20 transition-colors"></div>
-                <div className="w-14 h-14 rounded-xl bg-[#24292e]/80 border border-white/10 flex items-center justify-center mb-6 shadow-lg shadow-black/50">
-                  <GitBranch size={28} className="text-white" />
-                </div>
-                <h3 className="heading-md mb-3">GitHub Repo Analyzer</h3>
-                <p className="text-muted mb-6">
-                  Extract repo data, generate embeddings, and process them through the RAG brain to uncover specific insights and next actions.
-                </p>
-                <div className="flex items-center justify-between mt-auto">
-                  <div className="text-sm font-medium text-primary">Ready to parse</div>
-                  <Link to="/github-analyzer" className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-sm font-medium transition-colors">
-                    Analyze Link
-                  </Link>
-                </div>
-              </div>
+            <h3 className="text-xl font-semibold mb-2 text-neutral-900 dark:text-white">Document Upload</h3>
+            <p className="text-neutral-600 dark:text-neutral-400 text-sm">Upload resumes and documents for analysis and tracking.</p>
+          </Link>
 
-              {/* Resume / Document Uploading Path */}
-              <div className="glass-panel p-8 text-left group cursor-pointer relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-secondary/10 rounded-bl-full -z-10 group-hover:bg-secondary/20 transition-colors"></div>
-                <div className="w-14 h-14 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center mb-6 shadow-lg shadow-black/50 text-blue-400">
-                  <Upload size={28} />
-                </div>
-                <h3 className="heading-md mb-3">Document Processing</h3>
-                <p className="text-muted mb-6">
-                  Upload your resume or hackathon notes. Our User Profile Analyzer uses SpaCy & NLTK to build your personal knowledge vector.
-                </p>
-                <div className="flex items-center justify-between mt-auto">
-                  <div className="text-sm font-medium text-secondary">PDF, DOCX, MD supported</div>
-                  <Link to="/resume-upload" className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-sm font-medium transition-colors">
-                    Upload File
-                  </Link>
-                </div>
-              </div>
-              
+          {/* GitHub Module */}
+          <Link to="/github" className="group block bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 hover:border-purple-500/50 dark:hover:border-purple-500/50 transition-all shadow-sm hover:shadow-md dark:shadow-none">
+            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <Github className="w-6 h-6" />
             </div>
+            <h3 className="text-xl font-semibold mb-2 text-neutral-900 dark:text-white">Repo Analyzer</h3>
+            <p className="text-neutral-600 dark:text-neutral-400 text-sm">Paste a GitHub link, prompt for insights, and visualize your code.</p>
+          </Link>
 
-            {/* AI Action Execution Layer Section */}
-            <div className="mt-8">
-              <h3 className="text-xl font-bold mb-6 flex items-center gap-3">
-                <div className="w-2 h-6 bg-primary rounded-full"></div>
-                Execution Layer Activity
-              </h3>
-              
-              <div className="glass-panel overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-white/5 border-b border-white/10">
-                    <tr>
-                      <th className="px-6 py-4 text-xs font-semibold text-muted tracking-wider uppercase">Source</th>
-                      <th className="px-6 py-4 text-xs font-semibold text-muted tracking-wider uppercase">Insight / Action</th>
-                      <th className="px-6 py-4 text-xs font-semibold text-muted tracking-wider uppercase">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    <tr className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-6 py-4 flex items-center gap-3">
-                    <GitBranch size={16} className="text-muted" /> <span className="font-medium">React-Dash</span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-300">
-                        Incomplete 'Authentication' module detected. Scheduled Telegram reminder for Friday.
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-500/10 text-green-400 text-xs font-medium border border-green-500/20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span> Synced to Calendar
-                        </span>
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-6 py-4 flex items-center gap-3">
-                        <FileText size={16} className="text-muted" /> <span className="font-medium">Resume_2024.pdf</span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-300">
-                        Skill gap identified: You lack 'Next.js' experience for targeted internships. Added learning node.
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-yellow-500/10 text-yellow-500 text-xs font-medium border border-yellow-500/20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span> Processing Vectors
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+          {/* Events Module */}
+          <Link to="/events" className="group block bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 hover:border-purple-500/50 dark:hover:border-purple-500/50 transition-all md:col-span-2 shadow-sm hover:shadow-md dark:shadow-none">
+            <div className="w-12 h-12 bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2 text-neutral-900 dark:text-white">Upcoming Events</h3>
+            <p className="text-neutral-600 dark:text-neutral-400 text-sm">Don't miss momentum. Track hackathons and submission windows.</p>
+          </Link>
+        </motion.div>
+
+        {/* Activity Feed / Sidebar */}
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="col-span-1 bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-sm dark:shadow-none"
+        >
+          <h3 className="text-lg font-semibold mb-6 text-neutral-900 dark:text-white">Recent Activity</h3>
+          <div className="space-y-6">
+            <div className="flex gap-4">
+              <div className="w-2 h-2 mt-2 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0" />
+              <div>
+                <p className="text-sm text-neutral-800 dark:text-neutral-200">Analyzed <span className="font-medium text-emerald-600 dark:text-emerald-400">uplink-core</span> repository</p>
+                <p className="text-xs text-neutral-500 mt-1">2 hours ago</p>
               </div>
             </div>
-
+            <div className="flex gap-4">
+              <div className="w-2 h-2 mt-2 rounded-full bg-blue-500 dark:bg-blue-400 shrink-0" />
+              <div>
+                <p className="text-sm text-neutral-800 dark:text-neutral-200">Uploaded new resume draft</p>
+                <p className="text-xs text-neutral-500 mt-1">Yesterday</p>
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <div className="w-2 h-2 mt-2 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0" />
+              <div>
+                <p className="text-sm text-neutral-800 dark:text-neutral-200">Registered for <span className="font-medium text-amber-600 dark:text-amber-400">Global Hackathon 2026</span></p>
+                <p className="text-xs text-neutral-500 mt-1">3 days ago</p>
+              </div>
+            </div>
           </div>
-        </main>
+        </motion.div>
       </div>
-    </div>
+    </>
   );
-};
-
-export default HomePage;
+}

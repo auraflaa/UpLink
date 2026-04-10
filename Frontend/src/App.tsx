@@ -1,27 +1,34 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import LandingPage from './pages/LandingPage';
-import LoginPage from './pages/LoginPage';
-import HomePage from './pages/HomePage';
-import GitHubAnalyzerPage from './pages/GitHubAnalyzerPage';
-import ResumeUploadPage from './pages/ResumeUploadPage';
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import LandingPage from "./pages/LandingPage";
+import LoginPage from "./pages/LoginPage";
+import HomePage from "./pages/HomePage";
+import ResumePage from "./pages/ResumePage";
+import GithubPage from "./pages/GithubPage";
+import EventsPage from "./pages/EventsPage";
+import SettingsPage from "./pages/SettingsPage";
+import BuilderPage from "./pages/BuilderPage";
+import DashboardLayout from "./components/DashboardLayout";
+import { ThemeProvider } from "./components/theme-provider";
 
-function App() {
+export default function App() {
   return (
-    <BrowserRouter>
-      {/* Background blobs present on every page */}
-      <div className="bg-blobs">
-        <div className="blob blob-1"></div>
-        <div className="blob blob-2"></div>
-      </div>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/home" element={<HomePage />} />
-        <Route path="/github-analyzer" element={<GitHubAnalyzerPage />} />
-        <Route path="/resume-upload" element={<ResumeUploadPage />} />
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider defaultTheme="dark" storageKey="uplink-ui-theme">
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          
+          {/* Authenticated Routes wrapped in DashboardLayout */}
+          <Route element={<DashboardLayout />}>
+            <Route path="/home" element={<HomePage />} />
+            <Route path="/builder" element={<BuilderPage />} />
+            <Route path="/resume" element={<ResumePage />} />
+            <Route path="/github" element={<GithubPage />} />
+            <Route path="/events" element={<EventsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
-
-export default App;

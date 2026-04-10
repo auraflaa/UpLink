@@ -1,0 +1,5 @@
+{
+  "name": "UpLink",
+  "description": "A unified system for students to track progress, analyze GitHub repos, and manage documents.",
+  "requestFramePermissions": []
+}
