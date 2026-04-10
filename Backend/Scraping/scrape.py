@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
+import re
 import sqlite3
+import ssl
 import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
-from urllib import error, request
+from urllib import error, parse, request
 from zoneinfo import ZoneInfo
 
 
@@ -19,6 +22,13 @@ DEFAULT_DB_PATH = os.getenv("SCRAPER_DB_PATH", os.path.join(BASE_DIR, "events.sq
 DEFAULT_EVENT_HANDLER_URL = os.getenv("EVENT_HANDLER_URL", "http://127.0.0.1:8003/events/ingest")
 DEFAULT_SCAN_TIME = os.getenv("SCRAPER_SCAN_TIME", "08:00")
 DEFAULT_TIMEZONE = os.getenv("SCRAPER_TIMEZONE", "Asia/Calcutta")
+DEFAULT_MAX_EVENTS_PER_PLATFORM = int(os.getenv("SCRAPER_MAX_EVENTS_PER_PLATFORM", "12"))
+DEFAULT_REQUEST_TIMEOUT_SECONDS = int(os.getenv("SCRAPER_REQUEST_TIMEOUT_SECONDS", "20"))
+SCRAPER_USER_AGENT = os.getenv(
+    "SCRAPER_USER_AGENT",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+)
 
 
 def _utc_now() -> datetime:
@@ -61,6 +71,207 @@ def _as_string_list(value: Any) -> list[str]:
 
 def _safe_json_dumps(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _build_ssl_context() -> ssl.SSLContext:
+    cafile = os.getenv("SCRAPER_CA_BUNDLE") or os.getenv("SSL_CERT_FILE")
+    if cafile:
+        return ssl.create_default_context(cafile=cafile)
+
+    allow_insecure = str(os.getenv("SCRAPER_ALLOW_INSECURE_SSL") or "").strip().lower()
+    if allow_insecure in {"1", "true", "yes"}:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+
+    return ssl.create_default_context()
+
+
+def _fetch_html(url: str, timeout: int = DEFAULT_REQUEST_TIMEOUT_SECONDS) -> str:
+    req = request.Request(
+        url=url,
+        headers={
+            "User-Agent": SCRAPER_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+        },
+        method="GET",
+    )
+    with request.urlopen(req, timeout=timeout, context=_build_ssl_context()) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.read().decode(charset, errors="replace")
+
+
+def _strip_tags(value: str) -> str:
+    text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", value)
+    text = re.sub(r"(?is)<!--.*?-->", " ", text)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</(p|div|section|article|li|ul|ol|h1|h2|h3|h4|h5|h6|tr)>", "\n", text)
+    text = re.sub(r"(?is)<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = re.sub(r"\r", "\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    return text
+
+
+def _extract_text_lines(value: str) -> list[str]:
+    stripped = _strip_tags(value)
+    lines = []
+    for raw_line in stripped.splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip()
+        if line:
+            lines.append(line)
+    return lines
+
+
+def _extract_text_fragment(html_text: str, position: int, window: int = 2500) -> str:
+    start = max(0, position - 300)
+    end = min(len(html_text), position + window)
+    return " ".join(_extract_text_lines(html_text[start:end]))
+
+
+def _extract_links(html_text: str, base_url: str) -> list[dict[str, Any]]:
+    links: list[dict[str, Any]] = []
+    anchor_pattern = re.compile(
+        r'(?is)<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>'
+    )
+    for match in anchor_pattern.finditer(html_text):
+        href_raw = html.unescape(match.group(1)).strip()
+        href = parse.urljoin(base_url, href_raw)
+        text = " ".join(_extract_text_lines(match.group(2)))
+        links.append(
+            {
+                "href": href,
+                "href_raw": href_raw,
+                "text": text,
+                "position": match.start(),
+            }
+        )
+    return links
+
+
+def _extract_meta_content(html_text: str, key: str) -> str:
+    escaped_key = re.escape(key)
+    patterns = [
+        re.compile(
+            rf'(?is)<meta\b[^>]*property=["\']{escaped_key}["\'][^>]*content=["\']([^"\']+)["\']'
+        ),
+        re.compile(
+            rf'(?is)<meta\b[^>]*name=["\']{escaped_key}["\'][^>]*content=["\']([^"\']+)["\']'
+        ),
+        re.compile(
+            rf'(?is)<meta\b[^>]*content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']{escaped_key}["\']'
+        ),
+    ]
+    for pattern in patterns:
+        match = pattern.search(html_text)
+        if match:
+            return html.unescape(match.group(1)).strip()
+    return ""
+
+
+def _slug_from_url(url: str) -> str:
+    path = parse.urlparse(url).path.strip("/")
+    return path.split("/")[-1] if path else hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+
+
+def _first_matching_line(lines: list[str], pattern: str, start_index: int = 0) -> tuple[int, str] | None:
+    compiled = re.compile(pattern, re.IGNORECASE)
+    for index in range(start_index, len(lines)):
+        if compiled.search(lines[index]):
+            return index, lines[index]
+    return None
+
+
+def _parse_date_text(
+    value: str,
+    *,
+    default_hour: int = 9,
+    timezone_name: str = DEFAULT_TIMEZONE,
+) -> datetime | None:
+    text = " ".join(str(value or "").replace("(UTC)", "UTC").split())
+    if not text:
+        return None
+
+    local_zone = ZoneInfo(timezone_name)
+    simple_formats = [
+        ("%Y-%m-%d", local_zone),
+        ("%d/%m/%y", local_zone),
+        ("%d/%m/%Y", local_zone),
+        ("%d %b %Y", local_zone),
+        ("%b %d %Y", local_zone),
+    ]
+    for date_format, zone in simple_formats:
+        try:
+            parsed = datetime.strptime(text, date_format)
+            parsed = parsed.replace(hour=default_hour, minute=0, second=0, microsecond=0, tzinfo=zone)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            continue
+
+    match = re.search(r"(\d{1,2} [A-Za-z]{3})'(\d{2}), (\d{1,2}:\d{2}) ([AP]M) IST", text)
+    if match:
+        normalized = f"{match.group(1)} 20{match.group(2)} {match.group(3)} {match.group(4)}"
+        parsed = datetime.strptime(normalized, "%d %b %Y %I:%M %p")
+        return parsed.replace(tzinfo=local_zone).astimezone(timezone.utc)
+
+    match = re.search(r"([A-Za-z]{3} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M) UTC", text)
+    if match:
+        parsed = datetime.strptime(match.group(1), "%b %d, %Y, %I:%M %p")
+        return parsed.replace(tzinfo=timezone.utc)
+
+    match = re.search(r"(\d{1,2} [A-Za-z]{3} \d{4})", text)
+    if match:
+        parsed = datetime.strptime(match.group(1), "%d %b %Y")
+        return parsed.replace(hour=default_hour, minute=0, second=0, microsecond=0, tzinfo=local_zone).astimezone(
+            timezone.utc
+        )
+
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(hour=default_hour, minute=0, second=0, microsecond=0, tzinfo=local_zone)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _iso_from_text(value: str) -> str | None:
+    parsed = _parse_date_text(value)
+    return _isoformat(parsed) if parsed else None
+
+
+def _extract_title_from_lines(lines: list[str], blocked_patterns: list[str] | None = None) -> str:
+    blockers = [re.compile(pattern, re.IGNORECASE) for pattern in blocked_patterns or []]
+    for line in lines:
+        if len(line) < 3:
+            continue
+        if any(pattern.search(line) for pattern in blockers):
+            continue
+        return line
+    return ""
+
+
+def _has_schedule_field(event: dict[str, Any]) -> bool:
+    return any(
+        _as_string(event.get(key))
+        for key in ["deadline", "deadline_at", "registration_deadline", "start_at", "execute_at"]
+    )
+
+
+def detect_platform_from_url(event_url: str) -> str:
+    host = parse.urlparse(event_url).netloc.lower()
+    if "unstop.com" in host:
+        return "unstop"
+    if "devfolio.co" in host:
+        return "devfolio"
+    if "hackerearth.com" in host:
+        return "hackerearth"
+    if "reskilll.com" in host:
+        return "reskilll"
+    raise ValueError("Unsupported event platform URL.")
 
 
 def _normalize_mode(value: Any) -> str:
@@ -142,6 +353,24 @@ class NormalizedEvent:
 
 class BaseScraper:
     platform = "base"
+    listing_url = ""
+
+    def fetch_html(self, url: str) -> str:
+        return _fetch_html(url)
+
+    def dedupe_links(self, links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen: set[str] = set()
+        deduped: list[dict[str, Any]] = []
+        for link in links:
+            href = _as_string(link.get("href"))
+            if not href or href in seen:
+                continue
+            seen.add(href)
+            deduped.append(link)
+        return deduped
+
+    def parse_event_link(self, event_url: str) -> dict[str, Any]:
+        raise NotImplementedError
 
     def fetch_events(self) -> list[dict[str, Any]]:
         raise NotImplementedError
@@ -149,30 +378,424 @@ class BaseScraper:
 
 class UnstopScraper(BaseScraper):
     platform = "unstop"
+    listing_url = "https://api.unstop.com/hackathons/"
+
+    def parse_event_link(self, event_url: str) -> dict[str, Any]:
+        detail_html = self.fetch_html(event_url)
+        detail_lines = _extract_text_lines(detail_html)
+        title = (
+            _extract_meta_content(detail_html, "og:title")
+            or _extract_meta_content(detail_html, "twitter:title")
+            or _extract_title_from_lines(
+                detail_lines,
+                blocked_patterns=[
+                    r"registrations?",
+                    r"deadline",
+                    r"overview",
+                    r"stages and timelines",
+                ],
+            )
+        )
+        title = re.sub(r"\s*//\s*Unstop.*$", "", title).strip()
+        description = (
+            _extract_meta_content(detail_html, "description")
+            or _extract_meta_content(detail_html, "og:description")
+        )
+        organizer = ""
+        if title in detail_lines:
+            title_index = detail_lines.index(title)
+            if title_index + 1 < len(detail_lines):
+                candidate = detail_lines[title_index + 1]
+                if len(candidate) < 120:
+                    organizer = candidate
+
+        joined_text = " ".join(detail_lines)
+        deadline_match = re.search(
+            r"Registration Deadline\s+([A-Za-z0-9,' :]+(?:IST|UTC)?)",
+            joined_text,
+            re.IGNORECASE,
+        )
+        prize_match = re.search(
+            r"Total Prize Worth\s+([A-Za-z0-9 ,./+-]+)",
+            joined_text,
+            re.IGNORECASE,
+        )
+        start_match = re.search(
+            r"Starts? On\s+([A-Za-z0-9,' :]+(?:IST|UTC)?)",
+            joined_text,
+            re.IGNORECASE,
+        )
+        tags = [line.lstrip("#").strip() for line in detail_lines if line.startswith("#")]
+
+        mode = ""
+        lower_text = joined_text.lower()
+        if "online round" in lower_text or re.search(r"\bonline\b", lower_text):
+            mode = "online"
+        elif re.search(r"\boffline\b", lower_text):
+            mode = "offline"
+
+        return {
+            "title": title,
+            "description": description,
+            "platform": self.platform,
+            "source_id": f"{self.platform}:{_slug_from_url(event_url)}",
+            "event_url": event_url,
+            "registration_url": event_url,
+            "start_at": _iso_from_text(start_match.group(1)) if start_match else None,
+            "deadline": _iso_from_text(deadline_match.group(1)) if deadline_match else None,
+            "location": "",
+            "mode": mode,
+            "tags": tags,
+            "organizer": organizer,
+            "prize": prize_match.group(1).strip() if prize_match else "",
+            "timezone": DEFAULT_TIMEZONE,
+        }
 
     def fetch_events(self) -> list[dict[str, Any]]:
-        return []
+        listing_html = self.fetch_html(self.listing_url)
+        links = self.dedupe_links(_extract_links(listing_html, self.listing_url))
+        event_links = [
+            link
+            for link in links
+            if "/hackathons/" in link["href"] and link["href"].rstrip("/") != self.listing_url.rstrip("/")
+        ]
+
+        events: list[dict[str, Any]] = []
+        for link in event_links[:DEFAULT_MAX_EVENTS_PER_PLATFORM]:
+            try:
+                events.append(self.parse_event_link(link["href"]))
+            except Exception:
+                continue
+
+        return events
 
 
 class DevfolioScraper(BaseScraper):
     platform = "devfolio"
+    listing_url = "https://devfolio.co/hackathons"
+
+    def parse_event_link(self, event_url: str) -> dict[str, Any]:
+        detail_html = self.fetch_html(event_url)
+        detail_lines = _extract_text_lines(detail_html)
+        title = (
+            _extract_meta_content(detail_html, "og:title")
+            or _extract_meta_content(detail_html, "twitter:title")
+            or _extract_title_from_lines(detail_lines, blocked_patterns=[r"hackathon", r"theme", r"apply now"])
+        )
+        title = re.sub(r"\s*\|\s*Devfolio.*$", "", title).strip()
+        description = (
+            _extract_meta_content(detail_html, "description")
+            or _extract_meta_content(detail_html, "og:description")
+        )
+        joined = " ".join(detail_lines)
+        start_match = re.search(r"Starts?\s+(\d{2}/\d{2}/\d{2})", joined, re.IGNORECASE)
+        open_match = re.search(r"Opens?\s+(\d{2}/\d{2}/\d{2})", joined, re.IGNORECASE)
+        mode_match = re.search(r"\b(Online|Offline|Hybrid)\b", joined, re.IGNORECASE)
+        organizer = ""
+        theme_match = re.search(
+            r"Theme\s+(.+?)(?:\+\d+\s+participating|\bOnline\b|\bOffline\b|\bHybrid\b|\bOpen\b|\bUpcoming\b|\bEnded\b|\bStarts?\b|\bOpens?\b)",
+            joined,
+            re.IGNORECASE,
+        )
+        tags = []
+        if theme_match:
+            tags = [
+                token.strip(" ,")
+                for token in re.split(r"\s{2,}|,", theme_match.group(1))
+                if token.strip(" ,")
+            ]
+
+        return {
+            "title": title,
+            "description": description,
+            "platform": self.platform,
+            "source_id": f"{self.platform}:{_slug_from_url(event_url)}",
+            "event_url": event_url,
+            "registration_url": event_url,
+            "start_at": _iso_from_text(start_match.group(1)) if start_match else None,
+            "deadline": _iso_from_text(open_match.group(1)) if open_match else None,
+            "location": "",
+            "mode": mode_match.group(1).lower() if mode_match else "",
+            "tags": tags,
+            "organizer": organizer,
+            "prize": "",
+            "timezone": DEFAULT_TIMEZONE,
+        }
 
     def fetch_events(self) -> list[dict[str, Any]]:
-        return []
+        listing_html = self.fetch_html(self.listing_url)
+        links = self.dedupe_links(_extract_links(listing_html, self.listing_url))
+        blocked_texts = {
+            "all open hackathons",
+            "apply now",
+            "remind me",
+            "see projects",
+        }
+        events: list[dict[str, Any]] = []
+
+        for link in links:
+            href = link["href"]
+            if "devfolio.co" not in parse.urlparse(href).netloc:
+                continue
+            if href.rstrip("/") == self.listing_url.rstrip("/"):
+                continue
+            if not link["text"] or link["text"].strip().lower() in blocked_texts:
+                continue
+
+            snippet = _extract_text_fragment(listing_html, link["position"], window=2200)
+            if re.search(r"\b(ended|past)\b", snippet, re.IGNORECASE):
+                continue
+
+            start_match = re.search(r"Starts?\s+(\d{2}/\d{2}/\d{2})", snippet, re.IGNORECASE)
+            mode_match = re.search(r"\b(Online|Offline)\b", snippet, re.IGNORECASE)
+            theme_match = re.search(
+                r"Theme\s+(.+?)(?:\+\d+\s+participating|\bOnline\b|\bOffline\b|\bOpen\b|\bUpcoming\b|\bEnded\b|\bStarts?\b)",
+                snippet,
+                re.IGNORECASE,
+            )
+
+            tags = []
+            if theme_match:
+                tags = [
+                    token.strip(" ,")
+                    for token in re.split(r"\s{2,}|,", theme_match.group(1))
+                    if token.strip(" ,")
+                ]
+
+            events.append(
+                {
+                    "title": link["text"],
+                    "description": "",
+                    "platform": self.platform,
+                    "source_id": f"{self.platform}:{_slug_from_url(href)}",
+                    "event_url": href,
+                    "registration_url": href,
+                    "start_at": _iso_from_text(start_match.group(1)) if start_match else None,
+                    "location": "",
+                    "mode": mode_match.group(1).lower() if mode_match else "",
+                    "tags": tags,
+                    "organizer": "",
+                    "prize": "",
+                    "timezone": DEFAULT_TIMEZONE,
+                }
+            )
+
+            if len(events) >= DEFAULT_MAX_EVENTS_PER_PLATFORM:
+                break
+
+        return events
 
 
 class HackerEarthScraper(BaseScraper):
     platform = "hackerearth"
+    listing_url = "https://www.hackerearth.com/challenges/hackathon/"
+
+    def parse_event_link(self, event_url: str) -> dict[str, Any]:
+        detail_html = self.fetch_html(event_url)
+        detail_lines = _extract_text_lines(detail_html)
+        detail_text = " ".join(detail_lines)
+
+        title = (
+            _extract_meta_content(detail_html, "og:title")
+            or _extract_meta_content(detail_html, "twitter:title")
+        )
+        title = re.sub(r"\s*\|\s*HackerEarth.*$", "", title).strip()
+
+        description = (
+            _extract_meta_content(detail_html, "description")
+            or _extract_meta_content(detail_html, "og:description")
+        )
+        start_match = re.search(
+            r"starts on:\s*([A-Za-z]{3} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M UTC)",
+            detail_text,
+            re.IGNORECASE,
+        )
+        end_match = re.search(
+            r"ends on:\s*([A-Za-z]{3} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M UTC)",
+            detail_text,
+            re.IGNORECASE,
+        )
+        prize_match = re.search(r"Prizes?\s+([A-Za-z0-9 ,./+-]+?)\s+in prizes", detail_text, re.IGNORECASE)
+        mode_match = re.search(r"\b(Online|Offline)\b", detail_text, re.IGNORECASE)
+
+        tags: list[str] = []
+        theme_index = _first_matching_line(detail_lines, r"^Themes?$")
+        if theme_index:
+            for line in detail_lines[theme_index[0] + 1 :]:
+                if re.search(r"^Prizes?$", line, re.IGNORECASE):
+                    break
+                if len(line) > 2 and len(tags) < 5:
+                    tags.append(line)
+
+        return {
+            "title": title,
+            "description": description,
+            "platform": self.platform,
+            "source_id": f"{self.platform}:{_slug_from_url(event_url)}",
+            "event_url": event_url,
+            "registration_url": event_url,
+            "start_at": _iso_from_text(start_match.group(1)) if start_match else None,
+            "end_at": _iso_from_text(end_match.group(1)) if end_match else None,
+            "location": "",
+            "mode": mode_match.group(1).lower() if mode_match else "",
+            "tags": tags,
+            "organizer": "HackerEarth",
+            "prize": prize_match.group(1).strip() if prize_match else "",
+            "timezone": DEFAULT_TIMEZONE,
+        }
 
     def fetch_events(self) -> list[dict[str, Any]]:
-        return []
+        listing_html = self.fetch_html(self.listing_url)
+        links = self.dedupe_links(_extract_links(listing_html, self.listing_url))
+        challenge_links = [
+            link
+            for link in links
+            if "/challenges/hackathon/" in link["href"]
+            and link["href"].rstrip("/") != self.listing_url.rstrip("/")
+        ]
+
+        events: list[dict[str, Any]] = []
+        for link in challenge_links[:DEFAULT_MAX_EVENTS_PER_PLATFORM]:
+            try:
+                events.append(self.parse_event_link(link["href"]))
+            except Exception:
+                continue
+
+        return events
 
 
 class ReskilllScraper(BaseScraper):
     platform = "reskilll"
+    listing_url = "https://www.reskilll.com/"
+
+    def parse_event_link(self, event_url: str) -> dict[str, Any]:
+        detail_html = self.fetch_html(event_url)
+        detail_lines = _extract_text_lines(detail_html)
+        detail_text = " ".join(detail_lines)
+        title = (
+            _extract_meta_content(detail_html, "og:title")
+            or _extract_meta_content(detail_html, "twitter:title")
+            or _extract_title_from_lines(detail_lines, blocked_patterns=[r"register", r"view details"])
+        )
+        description = (
+            _extract_meta_content(detail_html, "description")
+            or _extract_meta_content(detail_html, "og:description")
+        )
+        start_match = re.search(r"Start\s+(\d{4}-\d{2}-\d{2})", detail_text, re.IGNORECASE)
+        end_match = re.search(r"End\s+(\d{4}-\d{2}-\d{2})", detail_text, re.IGNORECASE)
+        mode_match = re.search(r"\b(online|offline|hybrid)\b", detail_text, re.IGNORECASE)
+
+        return {
+            "title": title,
+            "description": description,
+            "platform": self.platform,
+            "source_id": f"{self.platform}:{_slug_from_url(event_url)}",
+            "event_url": event_url,
+            "registration_url": event_url,
+            "start_at": _iso_from_text(start_match.group(1)) if start_match else None,
+            "end_at": _iso_from_text(end_match.group(1)) if end_match else None,
+            "location": "",
+            "mode": mode_match.group(1).lower() if mode_match else "",
+            "tags": ["hackathon"],
+            "organizer": "Reskilll",
+            "prize": "",
+            "timezone": DEFAULT_TIMEZONE,
+        }
 
     def fetch_events(self) -> list[dict[str, Any]]:
-        return []
+        listing_html = self.fetch_html(self.listing_url)
+        listing_lines = _extract_text_lines(listing_html)
+        links = self.dedupe_links(_extract_links(listing_html, self.listing_url))
+        lower_lines = [line.lower() for line in listing_lines]
+
+        try:
+            start_index = lower_lines.index("our current hackathons")
+        except ValueError:
+            start_index = 0
+
+        try:
+            end_index = lower_lines.index("our community")
+        except ValueError:
+            end_index = len(listing_lines)
+
+        events: list[dict[str, Any]] = []
+        index = start_index
+        while index < end_index:
+            line = listing_lines[index]
+            if line.upper() not in {"OPEN", "UPCOMING", "CLOSED"}:
+                index += 1
+                continue
+
+            status = line.upper()
+            if status == "CLOSED":
+                index += 1
+                continue
+
+            title = listing_lines[index + 1] if index + 1 < end_index else ""
+            index += 2
+            description_lines: list[str] = []
+            start_at = None
+            end_at = None
+
+            while index < end_index:
+                current = listing_lines[index]
+                if current == "Start" and index + 1 < end_index:
+                    start_at = _iso_from_text(listing_lines[index + 1])
+                    index += 2
+                    continue
+                if current == "End" and index + 1 < end_index:
+                    end_at = _iso_from_text(listing_lines[index + 1])
+                    index += 2
+                    continue
+                if current in {"Register Now", "View Details"}:
+                    index += 1
+                    break
+                if current.upper() in {"OPEN", "UPCOMING", "CLOSED"}:
+                    break
+                description_lines.append(current)
+                index += 1
+
+            event_url = ""
+            if title:
+                title_position = listing_html.find(title)
+                if title_position >= 0:
+                    nearby_links = [
+                        link
+                        for link in links
+                        if title_position <= link["position"] <= title_position + 2500
+                        and parse.urlparse(link["href"]).netloc.endswith("reskilll.com")
+                    ]
+                    for link in nearby_links:
+                        if link["text"] in {"Register Now", "View Details"}:
+                            event_url = link["href"]
+                            break
+                    if not event_url and nearby_links:
+                        event_url = nearby_links[0]["href"]
+
+            if title:
+                events.append(
+                    {
+                        "title": title,
+                        "description": " ".join(description_lines).strip(),
+                        "platform": self.platform,
+                        "source_id": f"{self.platform}:{_slug_from_url(event_url or title)}",
+                        "event_url": event_url,
+                        "registration_url": event_url,
+                        "start_at": start_at,
+                        "end_at": end_at,
+                        "location": "",
+                        "mode": "",
+                        "tags": ["hackathon"],
+                        "organizer": "Reskilll",
+                        "prize": "",
+                        "timezone": DEFAULT_TIMEZONE,
+                    }
+                )
+
+            if len(events) >= DEFAULT_MAX_EVENTS_PER_PLATFORM:
+                break
+
+        return events
 
 
 SCRAPER_REGISTRY: dict[str, type[BaseScraper]] = {
@@ -506,6 +1129,55 @@ def _build_scrapers(platforms: list[str] | None = None) -> list[BaseScraper]:
     return scrapers
 
 
+def scrape_event_link(event_url: str, *, persist: bool = True, db_path: str = DEFAULT_DB_PATH) -> dict[str, Any]:
+    platform = detect_platform_from_url(event_url)
+    scraper = SCRAPER_REGISTRY[platform]()
+    normalized_event = normalize_event(scraper.parse_event_link(event_url), platform)
+    persisted = {"inserted": 0, "updated": 0, "persisted": 0}
+    if persist:
+        persisted = EventStore(db_path=db_path).upsert_events([normalized_event])
+    return {
+        "status": "completed",
+        "platform": platform,
+        "event": normalized_event,
+        "persisted": persisted,
+        "db_path": db_path if persist else None,
+        "schedulable": _has_schedule_field(normalized_event),
+    }
+
+
+def schedule_selected_event_link(
+    event_url: str,
+    *,
+    db_path: str = DEFAULT_DB_PATH,
+    event_handler_url: str = DEFAULT_EVENT_HANDLER_URL,
+) -> dict[str, Any]:
+    scraped = scrape_event_link(event_url, persist=True, db_path=db_path)
+    event = dict(scraped["event"])
+    if not _has_schedule_field(event):
+        return {
+            "status": "needs_schedule_details",
+            "message": (
+                "Event link was stored, but no schedule field could be extracted from the page. "
+                "You will need to provide the date manually or add OCR support for image-only schedules."
+            ),
+            "platform": scraped["platform"],
+            "event": event,
+            "persisted": scraped["persisted"],
+            "db_path": scraped["db_path"],
+        }
+
+    ingestion_results = ingest_events_to_event_handler([event], event_handler_url=event_handler_url)
+    return {
+        "status": "scheduled" if ingestion_results and ingestion_results[0]["status"] == "accepted" else "failed",
+        "platform": scraped["platform"],
+        "event": event,
+        "persisted": scraped["persisted"],
+        "db_path": scraped["db_path"],
+        "event_handler_results": ingestion_results,
+    }
+
+
 def run_scrapers(
     platforms: list[str] | None = None,
     *,
@@ -527,11 +1199,15 @@ def run_scrapers(
             discovered_events.extend(normalized_events)
             platform_stats[scraper.platform] = {
                 "discovered": len(normalized_events),
+                "raw_discovered": len(normalized_events),
+                "missing_schedule": sum(1 for event in normalized_events if not _has_schedule_field(event)),
                 "status": "ok",
             }
         except Exception as exc:
             platform_stats[scraper.platform] = {
                 "discovered": 0,
+                "raw_discovered": 0,
+                "missing_schedule": 0,
                 "status": "failed",
                 "reason": str(exc),
             }
@@ -680,6 +1356,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print stored events from the SQLite database and exit.",
     )
+    parser.add_argument(
+        "--event-url",
+        help="Scrape a single event detail page from a supported platform.",
+    )
+    parser.add_argument(
+        "--schedule-selected",
+        action="store_true",
+        help="When used with --event-url, schedule reminders only for that selected event link.",
+    )
     return parser
 
 
@@ -699,6 +1384,18 @@ def main() -> None:
                 ensure_ascii=False,
             )
         )
+        return
+
+    if args.event_url:
+        if args.schedule_selected:
+            result = schedule_selected_event_link(
+                args.event_url,
+                db_path=args.db_path,
+                event_handler_url=args.event_handler_url,
+            )
+        else:
+            result = scrape_event_link(args.event_url, persist=True, db_path=args.db_path)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
         return
 
     if args.daemon:

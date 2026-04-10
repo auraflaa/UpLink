@@ -6,22 +6,24 @@ import ResumePage from "./pages/ResumePage";
 import GithubPage from "./pages/GithubPage";
 import EventsPage from "./pages/EventsPage";
 import SettingsPage from "./pages/SettingsPage";
-import BuilderPage from "./pages/BuilderPage";
+import EnterprisePage from "./pages/EnterprisePage";
 import DashboardLayout from "./components/DashboardLayout";
 import { ThemeProvider } from "./components/theme-provider";
+import { ToastProvider } from "./components/ui/use-toast";
 
 export default function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="uplink-ui-theme">
-      <BrowserRouter>
-        <Routes>
+      <ToastProvider>
+        <BrowserRouter>
+          <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/enterprise" element={<EnterprisePage />} />
           <Route path="/login" element={<LoginPage />} />
           
           {/* Authenticated Routes wrapped in DashboardLayout */}
           <Route element={<DashboardLayout />}>
             <Route path="/home" element={<HomePage />} />
-            <Route path="/builder" element={<BuilderPage />} />
             <Route path="/resume" element={<ResumePage />} />
             <Route path="/github" element={<GithubPage />} />
             <Route path="/events" element={<EventsPage />} />
@@ -29,6 +31,7 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      </ToastProvider>
     </ThemeProvider>
   );
 }
