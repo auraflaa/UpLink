@@ -12,6 +12,8 @@ export default function GithubPage() {
   const [tempRepoUrl, setTempRepoUrl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const JIRA_LOGO = "https://assets.streamlinehq.com/image/private/w_300,h_300,ar_1/f_auto/v1/icons/professional-tools/jira-software-2-tfcc3k607k9mwgzab3lul.png/jira-software-2-wcevcgjziue4ibno342wv.png?_a=DATAiZAAZAA0";
+
   const [platform, setPlatform] = useState<"GitHub" | "Jira">("GitHub");
 
   useEffect(() => {
@@ -69,76 +71,72 @@ export default function GithubPage() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex-1 flex flex-col items-center justify-center max-w-3xl mx-auto w-full px-4"
+          className="flex-1 flex flex-col items-center justify-end max-w-4xl mx-auto w-full px-4 pb-32"
         >
-          <div className="w-20 h-20 bg-white dark:bg-neutral-900 rounded-full flex items-center justify-center mb-8 shadow-sm border border-neutral-200 dark:border-neutral-800 relative overflow-hidden">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={platform}
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -20, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="absolute inset-0 flex items-center justify-center"
+          {/* Top Section: Logos & Titles - Now clustered with the input */}
+          <div className="flex flex-col items-center mb-10">
+            <h1 className="text-3xl md:text-4xl font-bold text-neutral-900 dark:text-white mb-2 text-center tracking-tight flex items-center justify-center gap-2 flex-wrap">
+              Link your 
+              <motion.div 
+                animate={{ width: platform === "GitHub" ? "130px" : "70px" }}
+                transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+                className="relative h-[40px] md:h-[48px] overflow-hidden inline-flex items-center justify-center mx-2"
               >
-                {platform === "GitHub" ? (
-                  <Github className="w-10 h-10 text-neutral-900 dark:text-white" />
-                ) : (
-                  <LayoutDashboard className="w-10 h-10 text-neutral-500" />
-                )}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={platform}
+                    initial={{ y: 20, opacity: 0, scale: 0.8 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: -20, opacity: 0, scale: 0.8 }}
+                    transition={{ 
+                      duration: 0.4, 
+                      ease: [0.23, 1, 0.32, 1] 
+                    }}
+                    className={`absolute font-extrabold ${platform === "GitHub" ? "text-neutral-900 dark:text-white" : "text-neutral-900 dark:text-white"}`}
+                  >
+                    {platform}
+                  </motion.div>
+                </AnimatePresence>
               </motion.div>
-            </AnimatePresence>
+               workspace
+            </h1>
+            <p className="text-neutral-500 dark:text-neutral-400 text-sm">Paste a repository or project link below to begin analysis</p>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-neutral-900 dark:text-white mb-8 text-center tracking-tight flex items-center justify-center gap-2 flex-wrap">
-            Link your 
-            <div className="relative w-[110px] md:w-[130px] h-[40px] md:h-[48px] overflow-hidden inline-flex items-center justify-center">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={platform}
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: -20, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className={`absolute font-extrabold ${platform === "GitHub" ? "text-neutral-900 dark:text-white" : "text-neutral-500"}`}
-                >
-                  {platform}
-                </motion.div>
-              </AnimatePresence>
-            </div>
-             workspace
-          </h1>
           
-          <form onSubmit={handleStart} className="w-full relative flex items-center">
-            <div className="absolute left-4 text-neutral-400 flex items-center justify-center w-5 h-5">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={platform}
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.5, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="absolute"
-                >
-                  {platform === "GitHub" ? <Github className="w-5 h-5" /> : <LayoutDashboard className="w-5 h-5 text-neutral-500" />}
-                </motion.div>
-              </AnimatePresence>
-            </div>
-            <input 
-              type="url"
-              value={repoUrl}
-              onChange={e => setRepoUrl(e.target.value)}
-              placeholder={`Paste ${platform} URL here...`}
-              className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl py-4 pl-12 pr-40 text-lg focus:outline-none focus:ring-2 focus:ring-neutral-500/50 shadow-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 transition-all"
-            />
-            <div className="absolute right-2 flex items-center gap-2">
-              <button type="button" onClick={() => handleStart()} className="px-4 py-2 text-sm font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors">
-                Skip
-              </button>
-              <button type="submit" className="bg-neutral-600 hover:bg-neutral-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 shadow-sm">
-                Start <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </form>
+          {/* Bottom Section: URL Input */}
+          <div className="w-full max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            <form onSubmit={handleStart} className="w-full relative flex items-center">
+              <div className="absolute left-4 text-neutral-400 flex items-center justify-center w-5 h-5">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={platform}
+                    initial={{ scale: 0.5, opacity: 0, rotate: -45 }}
+                    animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                    exit={{ scale: 0.5, opacity: 0, rotate: 45 }}
+                    transition={{ duration: 0.3 }}
+                    className="absolute"
+                  >
+                    {platform === "GitHub" ? <Github className="w-5 h-5" /> : <img src={JIRA_LOGO} alt="Jira" className="w-5 h-5" />}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+              <input 
+                type="url"
+                value={repoUrl}
+                onChange={e => setRepoUrl(e.target.value)}
+                placeholder={`Paste ${platform} URL here...`}
+                className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl py-4 pl-12 pr-40 text-lg focus:outline-none focus:ring-2 focus:ring-neutral-500/50 shadow-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 transition-all"
+              />
+              <div className="absolute right-2 flex items-center gap-2">
+                <button type="button" onClick={() => handleStart()} className="px-4 py-2 text-sm font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors">
+                  Skip
+                </button>
+                <button type="submit" className="bg-neutral-600 hover:bg-neutral-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 shadow-sm">
+                  Start <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          </div>
         </motion.div>
       ) : (
         <motion.div 
@@ -159,7 +157,7 @@ export default function GithubPage() {
                       transition={{ duration: 0.3 }}
                       className="absolute inset-0 flex items-center justify-center"
                     >
-                      {platform === "GitHub" ? <Github className="w-4 h-4 text-neutral-600 dark:text-neutral-400" /> : <LayoutDashboard className="w-4 h-4 text-neutral-500" />}
+                      {platform === "GitHub" ? <Github className="w-4 h-4 text-neutral-600 dark:text-neutral-400" /> : <img src={JIRA_LOGO} alt="Jira" className="w-4 h-4" />}
                     </motion.div>
                   </AnimatePresence>
               </div>
@@ -224,7 +222,7 @@ export default function GithubPage() {
                         exit={{ opacity: 0, scale: 0.8 }}
                         className="absolute"
                       >
-                        {platform === "GitHub" ? <Github className="w-5 h-5" /> : <LayoutDashboard className="w-5 h-5 text-neutral-500" />}
+                        {platform === "GitHub" ? <Github className="w-5 h-5" /> : <img src={JIRA_LOGO} alt="Jira" className="w-5 h-5" />}
                       </motion.div>
                     </AnimatePresence>
                   </div>
@@ -272,7 +270,7 @@ export default function GithubPage() {
                            exit={{ opacity: 0, scale: 0.8 }}
                            className="absolute"
                         >
-                           {platform === "GitHub" ? <Github className="w-5 h-5" /> : <LayoutDashboard className="w-5 h-5" />}
+                           {platform === "GitHub" ? <Github className="w-5 h-5" /> : <img src={JIRA_LOGO} alt="Jira" className="w-5 h-5" />}
                         </motion.div>
                       </AnimatePresence>
                     </button>
