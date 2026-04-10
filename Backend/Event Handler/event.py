@@ -117,6 +117,12 @@ class EventNormalizer:
                 "resource": payload.get("resource"),
                 "resource_url": payload.get("resource_url") or payload.get("url"),
                 "location": payload.get("location"),
+                "timezone": payload.get("timezone"),
+                "calendar_id": payload.get("calendar_id"),
+                "calendar_event_id": payload.get("calendar_event_id"),
+                "attendees": payload.get("attendees") or [],
+                "meeting_link": payload.get("meeting_link"),
+                "default_duration_minutes": payload.get("default_duration_minutes"),
                 "origin_payload": payload,
             },
         )

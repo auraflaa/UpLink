@@ -11,10 +11,12 @@ from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib import error, parse, request
 
 
 DEFAULT_HOST = os.getenv("SCHEDULER_HOST", "0.0.0.0")
 DEFAULT_PORT = int(os.getenv("SCHEDULER_PORT", "8002"))
+CREDENTIALS_PATH = os.path.join(os.path.dirname(__file__), "calendar_credentials.json")
 
 
 def _parse_datetime(value: str | datetime | None) -> datetime:
@@ -298,21 +300,152 @@ class SchedulerEngine:
         }
 
     def _sync_calendar(self, job: ScheduledJob) -> None:
+        result = self._create_or_update_calendar_event(job)
         job.history.append(
             {
                 "timestamp": _isoformat(datetime.now(timezone.utc)),
                 "status": "calendar_sync",
-                "message": f"Calendar sync queued for {job.kind} '{job.title}'.",
-                "delivery_results": [
-                    {
-                        "channel": "calendar",
-                        "status": "queued",
-                        "starts_at": _isoformat(job.execute_at),
-                        "ends_at": _isoformat(job.end_at),
-                    }
-                ],
+                "message": f"Calendar sync processed for {job.kind} '{job.title}'.",
+                "delivery_results": [result],
             }
         )
+
+    def _create_or_update_calendar_event(self, job: ScheduledJob) -> dict[str, Any]:
+        credentials = self._load_calendar_credentials()
+        token = (
+            credentials.get("access_token")
+            or credentials.get("token")
+            or credentials.get("google_calendar_access_token")
+        )
+        calendar_id = str(job.metadata.get("calendar_id") or credentials.get("calendar_id") or "primary")
+
+        if not token:
+            return {
+                "channel": "calendar",
+                "status": "skipped",
+                "reason": "missing_access_token_in_calendar_credentials",
+            }
+
+        payload = self._build_calendar_payload(job)
+        encoded_calendar_id = parse.quote(calendar_id, safe="")
+        existing_event_id = str(job.metadata.get("calendar_event_id") or "").strip()
+
+        if existing_event_id:
+            method = "PATCH"
+            encoded_event_id = parse.quote(existing_event_id, safe="")
+            url = (
+                "https://www.googleapis.com/calendar/v3/calendars/"
+                f"{encoded_calendar_id}/events/{encoded_event_id}"
+            )
+        else:
+            method = "POST"
+            url = f"https://www.googleapis.com/calendar/v3/calendars/{encoded_calendar_id}/events"
+
+        req = request.Request(
+            url=url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            method=method,
+        )
+
+        try:
+            with request.urlopen(req, timeout=10) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+                calendar_event_id = response_payload.get("id")
+                if calendar_event_id:
+                    job.metadata["calendar_event_id"] = calendar_event_id
+                return {
+                    "channel": "calendar",
+                    "status": "synced",
+                    "calendar_id": calendar_id,
+                    "calendar_event_id": calendar_event_id,
+                    "html_link": response_payload.get("htmlLink"),
+                }
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            return {
+                "channel": "calendar",
+                "status": "failed",
+                "calendar_id": calendar_id,
+                "reason": f"google_calendar_http_error: {detail}",
+            }
+        except error.URLError as exc:
+            return {
+                "channel": "calendar",
+                "status": "failed",
+                "calendar_id": calendar_id,
+                "reason": f"google_calendar_connection_error: {exc.reason}",
+            }
+
+    def _load_calendar_credentials(self) -> dict[str, Any]:
+        if not os.path.exists(CREDENTIALS_PATH):
+            return {}
+
+        with open(CREDENTIALS_PATH, "r", encoding="utf-8") as file:
+            raw = file.read().strip()
+
+        if not raw:
+            return {}
+
+        loaded = json.loads(raw)
+        if isinstance(loaded, dict):
+            return loaded
+        if isinstance(loaded, str):
+            return {"access_token": loaded}
+        return {}
+
+    def _build_calendar_payload(self, job: ScheduledJob) -> dict[str, Any]:
+        timezone_name = str(job.metadata.get("timezone") or "UTC")
+        end_at = job.end_at or (
+            job.execute_at + timedelta(minutes=int(job.metadata.get("default_duration_minutes") or 30))
+        )
+
+        attendees = []
+        raw_attendees = job.metadata.get("attendees") or []
+        if isinstance(raw_attendees, list):
+            attendees = [
+                {"email": attendee["email"]} if isinstance(attendee, dict) and attendee.get("email") else {"email": str(attendee)}
+                for attendee in raw_attendees
+                if attendee
+            ]
+
+        reminder_minutes = [
+            {"method": "popup", "minutes": offset}
+            for offset in job.reminder_offsets_minutes
+        ]
+
+        return {
+            "summary": job.title,
+            "description": job.description or f"{job.kind.title()} scheduled from UpLink.",
+            "location": job.metadata.get("location"),
+            "start": {
+                "dateTime": job.execute_at.isoformat(),
+                "timeZone": timezone_name,
+            },
+            "end": {
+                "dateTime": end_at.isoformat(),
+                "timeZone": timezone_name,
+            },
+            "attendees": attendees,
+            "reminders": {
+                "useDefault": False,
+                "overrides": reminder_minutes,
+            },
+            "source": {
+                "title": "UpLink Scheduler",
+                "url": str(job.metadata.get("resource_url") or ""),
+            },
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": job.job_id,
+                }
+            }
+            if job.metadata.get("meeting_link")
+            else None,
+        }
 
     @staticmethod
     def _build_message(job: ScheduledJob, action: ScheduledAction) -> str:

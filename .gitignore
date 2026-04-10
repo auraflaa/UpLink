@@ -2,7 +2,7 @@
 venv/
 Backend/venv/
 ENV/
-.env
+*.env
 
 # Python
 **/__pycache__/
@@ -39,3 +39,6 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
+
+# Calendar Credentials
+calendar_credentials.json
