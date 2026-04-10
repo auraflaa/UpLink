@@ -38,5 +38,10 @@ To avoid conflicts during development, we have assigned the following fixed port
    pip install -r requirements.txt
    ```
 2. **Execution**:
-   - Start the Embedding Server: `python "Embedding Service/server.py"`
-   - Run the Master Test: `python "Test Scripts/integration_test.py"`
+   - Start DB: `cd "Qdrant DB" && docker-compose up -d`
+   - Start Embedding Server: `python "Embedding Service/server.py"`
+   - Start Mr. UpLinker: `python "Mr UpLinker/server.py"`
+
+3. **Verification**:
+   - Run Core Test: `python "Test Scripts/integration_test.py"`
+   - Run Full Agentic Test: `python "Test Scripts/mr_uplinker_verify.py"`

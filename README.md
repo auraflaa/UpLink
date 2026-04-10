@@ -1,39 +1,57 @@
-# UpLink – Student Growth & Project Assistant
+# UpLink – Agentic AI Student & Project Assistant
 
-UpLink is an AI-driven personal intelligence system for students that transforms scattered digital activity into actionable insights and automated execution. It understands your work, tracks your progress, and guides your next actions.
+UpLink is an AI-driven personal intelligence system that transforms repository activity and digital documentation into actionable insights. Powered by agentic RAG pipelines and high-performance vector search, it understands your codebases, tracks progress, and visualizes project workflows.
 
 ## 🚀 Core Capabilities
 
-- **Data Aggregation**: Unified collection from GitHub, personal notes, and external events.
-- **Intelligent Processing**: Contextual understanding powered by RAG (Retrieval-Augmented Generation) and Vector Embeddings.
-- **Execution Layer**: Automated scheduling via Google Calendar and direct communication through Telegram.
+- **Mr. UpLinker (Agentic RAG)**: A dedicated AI agent that performs deep scans of GitHub repositories, decides which files to prioritize, and creates summarized semantic knowledge.
+- **Microservice Intelligence**: Decoupled architecture with standalone Embedding and Vector DB services.
+- **Workflow Visualization**: LLM-generated Mermaid.js diagrams for project architecture and logic flows.
+- **Unified Action Layer**: Integration with Google Calendar and Telegram for automated scheduling.
 
-## 🏗️ System Architecture
+## 📡 Service Architecture
 
-### 1. Data Layer
-- **GitHub Analyser**: Extracts repository data and pushes embeddings to the vector database.
-- **Document Parser**: Processes resumes and personal documents.
+UpLink is built as a distributed microservice system to ensure high performance and GPU acceleration:
 
-### 2. AI & Storage Layer
-- **Qdrant DB (Vector Store)**: A high-performance Rust-based vector database hosted locally in Docker (Port `6366`).
-- **LLM Engine**: Central reasoning engine for progress insights and recommendations.
+| Service | Port | Logic |
+| :--- | :--- | :--- |
+| **Mr. UpLinker** | `6399` | The "Brain": Agentic orchestration and RAG-Chat. |
+| **Embedding Server** | `6377` | AI Inference: All-MPNet-Base-v2 (CUDA/CPU). |
+| **Vector DB (Qdrant)** | `6366` | Storage: Persistent Vector Database (Docker). |
 
-### 3. Action Layer
-- **Scheduler**: Syncs with Google Calendar and triggers Telegram notifications.
+---
 
-## 🛠️ Local Setup
+## 🛠️ Local Setup (Backend)
 
-### 1. Start Vector Database (Qdrant)
+### 1. Vector Database
+Ensure Docker Desktop is running.
 ```bash
-cd "UpLink/Backend/Qdrant DB"
+cd Backend/Qdrant\ DB
 docker-compose up -d
 ```
 
-### 2. Backend Setup
+### 2. AI Intelligence Core
+Initialize the environment and start the models.
 ```bash
-cd UpLink/Backend
-python -m venv venv
-# Windows
+# Setup Environment
+cd Backend
 .\venv\Scripts\activate
 pip install -r requirements.txt
+
+# Start Embedding Server
+python "Embedding Service/server.py"
+
+# Start the Brain (Mr. UpLinker)
+python "Mr UpLinker/server.py"
 ```
+
+### 🧪 Verification
+Run the unified master test to verify the entire pipeline (Scan -> Chat -> Viz):
+```bash
+python "Test Scripts/mr_uplinker_verify.py"
+```
+
+---
+
+## 🏗️ Project Lifecycle
+Currently in **Phase 2: Agentic Integration**. The core RAG pipeline is stable, and we are moving toward deep document parsing and front-end visualization.
