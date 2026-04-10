@@ -152,16 +152,12 @@ def analyze_dual_source(request: DualScanRequest, background_tasks: BackgroundTa
     if request.github_url:
         if not agent.validate_source(request.github_url, "github"):
             raise HTTPException(status_code=400, detail=f"Invalid GitHub link: {request.github_url}")
-        if agent.is_analyzing("github"):
-            raise HTTPException(status_code=409, detail="Busy analyzing a GitHub source.")
         background_tasks.add_task(agent.analyze_source, request.github_url, "github", request.collection_name)
         triggered.append("github")
 
     if request.jira_url:
         if not agent.validate_source(request.jira_url, "jira"):
             raise HTTPException(status_code=400, detail=f"Invalid Jira link: {request.jira_url}")
-        if agent.is_analyzing("jira"):
-            raise HTTPException(status_code=409, detail="Busy analyzing a Jira source.")
         background_tasks.add_task(agent.analyze_source, request.jira_url, "jira", request.collection_name)
         triggered.append("jira")
 

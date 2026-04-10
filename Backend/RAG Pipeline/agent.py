@@ -2,7 +2,6 @@ import os
 import requests
 import json
 import uuid
-import threading
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from github_scanner import GitHubScanner
@@ -29,22 +28,9 @@ class RAGPipelineAgent:
             "github": {},
             "jira": {}
         }
-        self._locks = {
-            "github": threading.Lock(),
-            "jira": threading.Lock()
-        }
-
-    def is_analyzing(self, source_type: Optional[str] = None) -> bool:
-        """
-        Type-aware busy check. If no type is specified, checks if ANY analysis is running.
-        """
-        if source_type in self._locks:
-            return self._locks[source_type].locked()
-        return any(l.locked() for l in self._locks.values())
 
     @property
     def last_run_telemetry(self):
-        # Backward compatibility: return combined telemetry
         return {**self.telemetry["github"], **self.telemetry["jira"]}
 
     def validate_source(self, url: str, source_type: str = "github") -> bool:
@@ -79,8 +65,8 @@ class RAGPipelineAgent:
 
     def analyze_source(self, source_url: str, source_type: str = "github", collection_name: str = "project_knowledge") -> Optional[List[Dict]]:
         """
-        Orchestrates ingestion based on source type (GitHub, Jira, etc.)
-        Parallelized: GitHub and Jira can run simultaneously on their own locks.
+        Routes ingestion to the correct handler. Fully parallel — no locks.
+        Frontend is responsible for enforcing source-type limits before calling.
         """
         if source_type == "github":
             return self._analyze_github(source_url, collection_name)
@@ -97,173 +83,156 @@ class RAGPipelineAgent:
         # Note: server.py will actually spawn these in separate background task threads
     def _analyze_github(self, repo_url: str, collection_name: str = "project_knowledge") -> Optional[List[Dict]]:
         """
-        Full Agentic Workflow for GitHub: Scan → Decide → Retrieve → Summarize → Index
+        Full Agentic Workflow for GitHub: Scan -> Decide -> Retrieve -> Summarize -> Index.
+        Runs fully in parallel — no locking. Multiple repos can be processed simultaneously.
         """
-        with self._locks["github"]:
-            t_start = self.time.perf_counter()
-            self.telemetry["github"] = {
-                "tree_scan_ms": 0,
-                "file_selection_ms": 0,
-                "summarization_ms": 0,
-                "indexing_ms": 0,
-                "total_ingestion_ms": 0
-            }
+        t_start = self.time.perf_counter()
+        self.telemetry["github"] = {
+            "tree_scan_ms": 0,
+            "file_selection_ms": 0,
+            "summarization_ms": 0,
+            "indexing_ms": 0,
+            "total_ingestion_ms": 0
+        }
+        
+        try:
+            print(f"\n[START] [PARALLEL] GitHub Pipeline starting analysis: {repo_url}")
+
+            # --- SMART CACHE CHECK ---
+            last_embedded_utc = self._get_last_embedded_time(repo_url)
+            pushed_at = self.scanner.get_repo_pushed_at(repo_url)
+            if last_embedded_utc and pushed_at:
+                if pushed_at <= last_embedded_utc:
+                    print(f"[CACHE] GitHub {repo_url} unchanged since last index. Skipping.")
+                    return []
+
+            # 1. Recursive tree scan
+            t0 = self.time.perf_counter()
+            tree_resp = self.scanner.get_recursive_tree(repo_url)
+            full_tree = [t['path'] for t in tree_resp.get('tree', []) if t['type'] == 'blob']
+            self.telemetry["github"]['tree_scan_ms'] = (self.time.perf_counter() - t0) * 1000
+            print(f"[*] Repository tree fetched. {len(full_tree)} files found.")
+
+            # 2. LLM selects key files
+            t0 = self.time.perf_counter()
+            print("[*] Requesting file selection from LLM...")
+            files_to_read = self.llm.select_key_files(full_tree)[:7]
+            self.telemetry["github"]['file_selection_ms'] = (self.time.perf_counter() - t0) * 1000
+            print(f"[*] LLM selected {len(files_to_read)} files (capped at 7).")
+
+            if not files_to_read:
+                candidates = ["README.md", "README", "package.json", "requirements.txt", "main.py", "Backend/requirements.txt"]
+                files_to_read = [f for f in candidates if f in full_tree]
+                print(f"[!] LLM selection empty. Using fallback: {files_to_read}")
+
+            # 3. Fetch and summarise (batched)
+            t0 = self.time.perf_counter()
+            files_to_summarize = []
+            for file_path in files_to_read:
+                print(f"[*] Fetching: {file_path}")
+                content = self.scanner.get_file_content(repo_url, file_path)
+                if content:
+                    files_to_summarize.append({"filename": file_path, "content": content})
+
+            print(f"[*] Sending batch summarisation for {len(files_to_summarize)} files...")
+            batch_results = self.llm.summarise_batch(files_to_summarize)
             
-            try:
-                print(f"\n[START] [PARALLEL] GitHub Pipeline starting analysis: {repo_url}")
+            summaries = [
+                {"filename": fp, "summary": s, "source_url": repo_url, "source_type": "github"}
+                for fp, s in batch_results.items()
+            ]
+            self.telemetry["github"]['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
 
-                # --- SMART CACHE CHECK ---
-                last_embedded_utc = self._get_last_embedded_time(repo_url)
-                pushed_at = self.scanner.get_repo_pushed_at(repo_url)
-                if last_embedded_utc and pushed_at:
-                    if pushed_at <= last_embedded_utc:
-                        print(f"[CACHE] SMART CACHE: GitHub repository {repo_url} has not changed since last indexed ({last_embedded_utc}). Skipping ingestion!")
-                        return []
-                        
-
-                # 1. Recursive tree scan
-                t0 = self.time.perf_counter()
-                tree_resp = self.scanner.get_recursive_tree(repo_url)
-                full_tree = [t['path'] for t in tree_resp.get('tree', []) if t['type'] == 'blob']
-                self.telemetry["github"]['tree_scan_ms'] = (self.time.perf_counter() - t0) * 1000
-                print(f"[*] Repository tree fetched. {len(full_tree)} files found (post-filter).")
-                if not full_tree:
-                    print("[!] Full tree is empty after filtering. Check ignore_list.")
-
-                # 2. LLM decides which files are most valuable
-                t0 = self.time.perf_counter()
-                print("[*] Requesting file selection from LLM...")
-                # Limit selection to 7 core files for token efficiency
-                files_to_read = self.llm.select_key_files(full_tree)[:7]
-                self.telemetry["github"]['file_selection_ms'] = (self.time.perf_counter() - t0) * 1000
-                print(f"[*] LLM selected {len(files_to_read)} files for summarisation (Capped at 7).")
-
-                if not files_to_read:
-                    # Deterministic fallback
-                    candidates = ["README.md", "README", "package.json", "requirements.txt", "main.py", "Backend/requirements.txt"]
-                    files_to_read = [f for f in candidates if f in full_tree]
-                    print(f"[!] LLM selection failed or returned empty. Using fallback: {files_to_read}")
-
-                # 3. Fetch file contents and summarise (BATCHED)
-                t0 = self.time.perf_counter()
-                files_to_summarize = []
-                for file_path in files_to_read:
-                    print(f"[*] Fetching: {file_path}")
-                    content = self.scanner.get_file_content(repo_url, file_path)
-                    if content:
-                        files_to_summarize.append({"filename": file_path, "content": content})
-
-                print(f"[*] Sending batch summarisation request for {len(files_to_summarize)} files...")
-                batch_results = self.llm.summarise_batch(files_to_summarize)
-                
-                summaries = []
-                for file_path, summary in batch_results.items():
-                    summaries.append({
-                        "filename": file_path,
-                        "summary": summary,
-                        "source_url": repo_url,
-                        "source_type": "github"
-                    })
-                
-                self.telemetry["github"]['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
-
-                if not summaries:
-                    print("[!] No summaries generated. Analysis aborted.")
-                    return None
-
-                # 4. Clear ALL existing knowledge of this type (Singleton Constraint)
-                print(f"[*] Enforcing singleton limit: Clearing all previous 'github' data...")
-                self._clear_previous_source_data(collection_name, "github")
-
-                t0 = self.time.perf_counter()
-                print(f"[*] Indexing {len(summaries)} summaries into '{collection_name}'...")
-                self._index_summaries(summaries, collection_name)
-                self.telemetry["github"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
-                
-                print(f"[OK] Analysis complete. RAG Pipeline indexed {len(summaries)} files.")
-                return summaries
-            except Exception as e:
-                print(f"[FAIL] CRITICAL ERROR during analysis: {e}")
-                import traceback
-                traceback.print_exc()
+            if not summaries:
+                print("[!] No summaries generated. Analysis aborted.")
                 return None
-            finally:
-                self.telemetry["github"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
+
+            # 4. Index
+            t0 = self.time.perf_counter()
+            print(f"[*] Indexing {len(summaries)} summaries into '{collection_name}'...")
+            self._index_summaries(summaries, collection_name)
+            self.telemetry["github"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
+            
+            print(f"[OK] GitHub analysis complete. Indexed {len(summaries)} files.")
+            return summaries
+
+        except Exception as e:
+            print(f"[FAIL] CRITICAL ERROR during GitHub analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        finally:
+            self.telemetry["github"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
 
     def _analyze_jira(self, source_url: str, collection_name: str) -> Optional[List[Dict]]:
         """
         Fetches structured Jira data from the Scheduler and indexes it.
+        Runs fully in parallel — no locking.
         """
-        with self._locks["jira"]:
-            t_start = self.time.perf_counter()
-            self.telemetry["jira"] = {
-                "jira_fetch_ms": 0,
-                "summarization_ms": 0,
-                "indexing_ms": 0,
-                "total_ingestion_ms": 0
-            }
-            scheduler_url = os.getenv("SCHEDULER_URL", "http://127.0.0.1:8002")
-            print(f"[*] [PARALLEL] Starting JIRA analysis for: {source_url}")
+        t_start = self.time.perf_counter()
+        self.telemetry["jira"] = {
+            "jira_fetch_ms": 0,
+            "summarization_ms": 0,
+            "indexing_ms": 0,
+            "total_ingestion_ms": 0
+        }
+        scheduler_url = os.getenv("SCHEDULER_URL", "http://127.0.0.1:8002")
+        print(f"[*] [PARALLEL] Starting JIRA analysis for: {source_url}")
+        
+        try:
+            # 1. Fetch RAG-ready document from Scheduler
+            t0 = self.time.perf_counter()
+            res = requests.get(f"{scheduler_url}/jira/rag-document", params={"url": source_url}, timeout=30)
+            res.raise_for_status()
+            data = res.json()
             
-            try:
-                # 1. Fetch RAG-ready document from Scheduler
-                t0 = self.time.perf_counter()
-                res = requests.get(f"{scheduler_url}/jira/rag-document", params={"url": source_url}, timeout=30)
-                res.raise_for_status()
-                data = res.json()
-                
-                if data.get("status") != "completed":
-                    print(f"[!] Scheduler Jira analysis failed: {data.get('message')}")
-                    return None
-                    
-                rag_doc = data.get("rag_document")
-                self.telemetry["jira"]['jira_fetch_ms'] = (self.time.perf_counter() - t0) * 1000
-
-                # --- SMART CACHE CHECK ---
-                last_embedded_utc = self._get_last_embedded_time(source_url)
-                ticket_updated_at = rag_doc.get("metadata", {}).get("updated")
-                if last_embedded_utc and ticket_updated_at:
-                    if ticket_updated_at <= last_embedded_utc:
-                        print(f"[⚡] SMART CACHE: Jira ticket {source_url} has not changed since last indexed ({last_embedded_utc}). Skipping ingestion!")
-                        return []
-                        
-                
-                # 2. High-Reasoning Summarization (Just like GitHub!)
-                print(f"[*] Sending Jira data for Gemini summarisation...")
-                t0 = self.time.perf_counter()
-                file_obj = {
-                    "filename": rag_doc.get("title", "Jira Task"),
-                    "content": rag_doc.get("content", "")
-                }
-                batch_results = self.llm.summarise_batch([file_obj])
-                llm_summary = list(batch_results.values())[0] if batch_results else "Summary unavailable."
-                self.telemetry["jira"]['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
-                
-                # 3. Extract content for indexing
-                summary_entry = {
-                    "filename": rag_doc.get("title", "Jira Document"),
-                    "summary": llm_summary,
-                    "source_url": source_url,
-                    "source_type": "jira",
-                    "metadata": rag_doc.get("metadata", {})
-                }
-                
-                # 4. Clear ALL existing knowledge of this type (Singleton Constraint)
-                print(f"[*] Enforcing singleton limit: Clearing all previous 'jira' data...")
-                self._clear_previous_source_data(collection_name, "jira")
-                
-                t0 = self.time.perf_counter()
-                self._index_summaries([summary_entry], collection_name)
-                self.telemetry["jira"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
-                
-                print(f"[✅] JIRA analysis complete for {source_url}.")
-                return [summary_entry]
-                
-            except Exception as e:
-                print(f"[❌] Error during JIRA analysis: {e}")
+            if data.get("status") != "completed":
+                print(f"[!] Scheduler Jira analysis failed: {data.get('message')}")
                 return None
-            finally:
-                self.telemetry["jira"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
+                
+            rag_doc = data.get("rag_document")
+            self.telemetry["jira"]['jira_fetch_ms'] = (self.time.perf_counter() - t0) * 1000
+
+            # --- SMART CACHE CHECK ---
+            last_embedded_utc = self._get_last_embedded_time(source_url)
+            ticket_updated_at = rag_doc.get("metadata", {}).get("updated")
+            if last_embedded_utc and ticket_updated_at:
+                if ticket_updated_at <= last_embedded_utc:
+                    print(f"[CACHE] Jira ticket {source_url} unchanged. Skipping.")
+                    return []
+            
+            # 2. Summarise
+            print(f"[*] Sending Jira data for Gemini summarisation...")
+            t0 = self.time.perf_counter()
+            file_obj = {
+                "filename": rag_doc.get("title", "Jira Task"),
+                "content": rag_doc.get("content", "")
+            }
+            batch_results = self.llm.summarise_batch([file_obj])
+            llm_summary = list(batch_results.values())[0] if batch_results else "Summary unavailable."
+            self.telemetry["jira"]['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
+            
+            # 3. Index
+            summary_entry = {
+                "filename": rag_doc.get("title", "Jira Document"),
+                "summary": llm_summary,
+                "source_url": source_url,
+                "source_type": "jira",
+                "metadata": rag_doc.get("metadata", {})
+            }
+            
+            t0 = self.time.perf_counter()
+            self._index_summaries([summary_entry], collection_name)
+            self.telemetry["jira"]['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
+            
+            print(f"[OK] JIRA analysis complete for {source_url}.")
+            return [summary_entry]
+            
+        except Exception as e:
+            print(f"[FAIL] Error during JIRA analysis: {e}")
+            return None
+        finally:
+            self.telemetry["jira"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
 
     def _get_last_embedded_time(self, source_url: str) -> Optional[str]:
         """Helper to quickly check the embedding registry for the last ingestion time."""
