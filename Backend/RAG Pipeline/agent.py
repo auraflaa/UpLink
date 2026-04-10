@@ -10,8 +10,8 @@ from llm_client import GroqLLMClient
 load_dotenv()
 
 # --- SERVICE CONFIG (resolved from .env with fallbacks) ---
-EMBEDDING_URL = f"http://localhost:{os.getenv('EMBEDDING_PORT', 6377)}/embed"
-QDRANT_URL = f"http://localhost:{os.getenv('QDRANT_PORT', 6366)}"
+EMBEDDING_URL = f"http://127.0.0.1:{os.getenv('EMBEDDING_PORT', 6377)}/embed"
+QDRANT_URL = f"http://127.0.0.1:{os.getenv('QDRANT_PORT', 6366)}"
 
 
 class RAGPipelineAgent:
@@ -21,8 +21,11 @@ class RAGPipelineAgent:
     """
 
     def __init__(self, github_token: Optional[str] = None, groq_api_key: Optional[str] = None):
+        import time
+        self.time = time
         self.scanner = GitHubScanner(token=github_token or os.getenv("GITHUB_TOKEN"))
         self.llm = GroqLLMClient(api_key=groq_api_key or os.getenv("GROQ_API_KEY"))
+        self.last_run_telemetry = {}
 
     # ------------------------------------------------------------------ #
     #  PHASE 1 — Repository Ingestion                                      #
@@ -32,52 +35,79 @@ class RAGPipelineAgent:
         """
         Full Agentic Workflow: Scan → Decide → Retrieve → Summarize → Index
         """
-        print(f"\n[🚀] RAG Pipeline starting analysis: {repo_url}")
+        try:
+            self.last_run_telemetry = {}
+            t_start = self.time.perf_counter()
+            print(f"\n[🚀] RAG Pipeline starting analysis: {repo_url}")
 
-        # 1. Recursive tree scan
-        tree_resp = self.scanner.get_recursive_tree(repo_url)
-        full_tree = [t['path'] for t in tree_resp.get('tree', []) if t['type'] == 'blob']
-        print(f"[*] Repository tree fetched. {len(full_tree)} files found.")
+            # 1. Recursive tree scan
+            t0 = self.time.perf_counter()
+            tree_resp = self.scanner.get_recursive_tree(repo_url)
+            full_tree = [t['path'] for t in tree_resp.get('tree', []) if t['type'] == 'blob']
+            self.last_run_telemetry['tree_scan_ms'] = (self.time.perf_counter() - t0) * 1000
+            print(f"[*] Repository tree fetched. {len(full_tree)} files found (post-filter).")
+            if not full_tree:
+                print("[!] Full tree is empty after filtering. Check ignore_list.")
 
-        # 2. LLM decides which files are most valuable
-        print("[*] Requesting file selection from LLM...")
-        files_to_read = self.llm.select_key_files(full_tree)
+            # 2. LLM decides which files are most valuable
+            t0 = self.time.perf_counter()
+            print("[*] Requesting file selection from LLM...")
+            files_to_read = self.llm.select_key_files(full_tree)
+            self.last_run_telemetry['file_selection_ms'] = (self.time.perf_counter() - t0) * 1000
+            print(f"[*] LLM selected {len(files_to_read)} files for summarisation.")
 
-        if not files_to_read:
-            # Deterministic fallback
-            candidates = ["README.md", "README", "package.json", "requirements.txt", "main.py", "app.py", "index.ts"]
-            files_to_read = [f for f in candidates if f in full_tree]
-            print(f"[!] LLM selection failed. Using fallback: {files_to_read}")
+            if not files_to_read:
+                # Deterministic fallback
+                candidates = ["README.md", "README", "package.json", "requirements.txt", "main.py", "Backend/requirements.txt"]
+                files_to_read = [f for f in candidates if f in full_tree]
+                print(f"[!] LLM selection failed or returned empty. Using fallback: {files_to_read}")
 
-        print(f"[*] Selected {len(files_to_read)} files for deep-read: {files_to_read}")
+            # 3. Fetch file contents and summarise (PARALLEL)
+            t0 = self.time.perf_counter()
+            summaries = []
+            
+            from concurrent.futures import ThreadPoolExecutor
+            
+            def process_file(file_path):
+                print(f"[*] Fetching and summarising: {file_path}")
+                content = self.scanner.get_file_content(repo_url, file_path)
+                if content:
+                    summary = self.llm.summarise_file(file_path, content)
+                    if summary:
+                        return {
+                            "filename": file_path,
+                            "summary": summary,
+                            "repo_url": repo_url
+                        }
+                return None
 
-        # 3. Fetch file contents and summarise
-        summaries = []
-        for file_path in files_to_read:
-            print(f"[*] Fetching and summarising: {file_path}")
-            content = self.scanner.get_file_content(repo_url, file_path)
-            if content:
-                summary = self.llm.summarise_file(file_path, content)
-                if summary:
-                    summaries.append({
-                        "filename": file_path,
-                        "summary": summary,
-                        "repo_url": repo_url
-                    })
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                results = list(executor.map(process_file, files_to_read))
+                summaries = [r for r in results if r]
 
-        if not summaries:
-            print("[!] No summaries generated. Analysis aborted.")
+            self.last_run_telemetry['summarization_ms'] = (self.time.perf_counter() - t0) * 1000
+
+            if not summaries:
+                print("[!] No summaries generated. Analysis aborted.")
+                return None
+
+            # 4. Clear stale data for this repo + re-index
+            print(f"[*] Clearing stale entries for {repo_url} in '{collection_name}'...")
+            self._delete_stale_entries(collection_name, repo_url)
+
+            t0 = self.time.perf_counter()
+            print(f"[*] Indexing {len(summaries)} summaries into '{collection_name}'...")
+            self._index_summaries(summaries, collection_name)
+            self.last_run_telemetry['indexing_ms'] = (self.time.perf_counter() - t0) * 1000
+            
+            self.last_run_telemetry['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
+            print(f"[✅] Analysis complete. RAG Pipeline indexed {len(summaries)} files.")
+            return summaries
+        except Exception as e:
+            print(f"[❌] CRITICAL ERROR during analysis: {e}")
+            import traceback
+            traceback.print_exc()
             return None
-
-        # 4. Clear stale data for this repo + re-index
-        print(f"[*] Clearing stale entries for {repo_url} in '{collection_name}'...")
-        self._delete_stale_entries(collection_name, repo_url)
-
-        print(f"[*] Indexing {len(summaries)} summaries into '{collection_name}'...")
-        self._index_summaries(summaries, collection_name)
-
-        print(f"[✅] Analysis complete. RAG Pipeline indexed {len(summaries)} files from {repo_url}.")
-        return summaries
 
     def _delete_stale_entries(self, collection_name: str, repo_url: str):
         """Removes old vector entries for a specific repo before re-indexing."""
