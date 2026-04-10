@@ -50,13 +50,18 @@ class MemoryStore:
         self._ensure_collection()
 
     def _ensure_collection(self):
-        """Ensures the chat_memory collection exists in Qdrant."""
-        res = requests.get(f"{QDRANT_URL}/collections/{MEMORY_COLLECTION}")
-        if res.status_code != 200:
-            print(f"[*] Creating {MEMORY_COLLECTION} collection...")
-            requests.put(f"{QDRANT_URL}/collections/{MEMORY_COLLECTION}", json={
-                "vectors": {"size": 768, "distance": "Cosine"}
-            })
+        """Ensures the chat_memory collection exists in Qdrant. Non-blocking."""
+        try:
+            res = requests.get(f"{QDRANT_URL}/collections/{MEMORY_COLLECTION}", timeout=2)
+            if res.status_code != 200:
+                print(f"[*] Creating '{MEMORY_COLLECTION}' collection in Qdrant...")
+                requests.put(f"{QDRANT_URL}/collections/{MEMORY_COLLECTION}", json={
+                    "vectors": {"size": 768, "distance": "Cosine"}
+                }, timeout=5)
+        except requests.exceptions.ConnectionError:
+            print(f"[!] Qdrant not reachable at startup — '{MEMORY_COLLECTION}' will be created on first use.")
+        except Exception as e:
+            print(f"[!] Collection check failed: {e}")
 
     def save_message(self, user_id: str, session_id: str, role: str, content: str):
         """
