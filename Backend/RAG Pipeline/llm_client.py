@@ -1,12 +1,17 @@
 import os
 import json
 import time
+import random
 import requests
 from typing import List, Dict, Optional
 import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Gemini rate limit retry config
+_GEMINI_MAX_RETRIES = 5
+_GEMINI_BASE_DELAY = 2  # seconds, doubled each retry
 
 class LLMClient:
     """
@@ -73,36 +78,51 @@ class LLMClient:
         
         return "Error: No LLM provider configured."
 
-    def _google_chat(self, messages: List[Dict], model_name: str, temperature: float) -> Optional[str]:
-        try:
-            # Separate the 'system' instruction from the 'user' messages
-            system_msg = next((m['content'] for m in messages if m['role'] == 'system'), None)
-            user_msgs = [m for m in messages if m['role'] != 'system']
-            
-            # Use the official system_instruction parameter if supported
-            if "gemma" in model_name.lower():
-                # Open-weight Gemma models often reject the strict system_instruction payload
-                model = genai.GenerativeModel(model_name=model_name)
-                prompt = ""
-                if system_msg:
-                    prompt += f"System Instructions: {system_msg}\n\n"
-                prompt += "\n".join([f"{m['role'].upper()}: {m['content']}" for m in user_msgs])
-            else:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=system_msg
+    def _gemini_call_with_retry(self, model, prompt: str, temperature: float = 0.2) -> Optional[str]:
+        """
+        Wrapper for all Gemini generate_content calls.
+        Retries on 429 (Resource Exhausted) with exponential backoff + jitter.
+        """
+        for attempt in range(_GEMINI_MAX_RETRIES):
+            try:
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(temperature=temperature)
                 )
-                # Format history for Gemini
-                prompt = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in user_msgs])
-            
-            response = model.generate_content(
-                prompt, 
-                generation_config=genai.types.GenerationConfig(temperature=temperature)
+                return response.text
+            except Exception as e:
+                err = str(e)
+                is_rate_limit = "429" in err or "Resource has been exhausted" in err or "RESOURCE_EXHAUSTED" in err
+                if is_rate_limit and attempt < _GEMINI_MAX_RETRIES - 1:
+                    delay = (_GEMINI_BASE_DELAY ** attempt) + random.uniform(0, 1)
+                    print(f"[!] Gemini rate limit hit (attempt {attempt+1}/{_GEMINI_MAX_RETRIES}). Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+                else:
+                    print(f"[!] Gemini Error (attempt {attempt+1}): {e}")
+                    return None
+        return None
+
+    def _google_chat(self, messages: List[Dict], model_name: str, temperature: float) -> Optional[str]:
+        # Separate system instruction from user messages (pure Python, no try needed)
+        system_msg = next((m['content'] for m in messages if m['role'] == 'system'), None)
+        user_msgs = [m for m in messages if m['role'] != 'system']
+
+        if "gemma" in model_name.lower():
+            # Open-weight Gemma models reject strict system_instruction payloads
+            model = genai.GenerativeModel(model_name=model_name)
+            prompt = ""
+            if system_msg:
+                prompt += f"System Instructions: {system_msg}\n\n"
+            prompt += "\n".join([f"{m['role'].upper()}: {m['content']}" for m in user_msgs])
+        else:
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system_msg
             )
-            return response.text
-        except Exception as e:
-            print(f"[!] Gemini Error: {e}")
-            return None
+            prompt = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in user_msgs])
+
+        return self._gemini_call_with_retry(model, prompt, temperature)
+
 
     def _groq_chat(self, messages: List[Dict], model_name: str, temperature: float, max_retries: int) -> Optional[str]:
         headers = {"Authorization": f"Bearer {self.groq_key}", "Content-Type": "application/json"}
@@ -145,12 +165,9 @@ class LLMClient:
             prompt += f"--- FILE: {f['filename']} ---\n{f['content'][:5000]}\n\n"
 
         try:
-            # We remove response_mime_type as it's not supported by all Gemma models
-            response = self.google_summary.generate_content(
-                prompt, 
-                generation_config=genai.types.GenerationConfig(temperature=0.2)
+            return self._extract_json(
+                self._gemini_call_with_retry(self.google_summary, prompt, temperature=0.2) or "{}"
             )
-            return self._extract_json(response.text)
         except Exception as e:
             print(f"[!] Gemini Batch Error: {e}")
             return {}
