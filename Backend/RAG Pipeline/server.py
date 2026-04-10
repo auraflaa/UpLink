@@ -6,11 +6,11 @@ from dotenv import load_dotenv
 # MUST come before any other imports that might use env vars
 load_dotenv()
 
-key = os.getenv("GROQ_API_KEY", "")
+key = os.getenv("GOOGLE_API_KEY", "")
 if key:
-    print(f"[*] Environment Loaded. API Key Found: {key[:6]}...{key[-4:]}")
+    print(f"[*] Environment Loaded. Google API Key Found: {key[:6]}...{key[-4:]}")
 else:
-    print("[!] ERROR: No GROQ_API_KEY found in environment!")
+    print("[!] ERROR: No GOOGLE_API_KEY found in environment!")
 
 import requests
 import json
@@ -44,14 +44,27 @@ sessions = SessionManager()
 
 # --- 3. REQUEST SCHEMAS ---
 class ScanRequest(BaseModel):
-    repo_url: str
+    source_url: Optional[str] = None
+    repo_url: Optional[str] = None  # Backward compatibility alias
+    source_type: str = "github"
     collection_name: str = "project_knowledge"
+
+    @property
+    def url(self) -> str:
+        return self.source_url or self.repo_url or ""
 
 class ChatRequest(BaseModel):
     query: str
     user_id: str
     session_id: str = "default"
     collection_name: str = "project_knowledge"
+    source_url: Optional[str] = None
+    repo_url: Optional[str] = None
+    source_type: str = "github"
+
+    @property
+    def url(self) -> str:
+        return self.source_url or self.repo_url or ""
 
 
 # --- 4. ENDPOINTS ---
@@ -62,14 +75,17 @@ def health_check():
 
 
 @app.get("/status")
-def check_repo_status(repo_url: str, collection_name: str = "project_knowledge"):
+def check_source_status(source_url: Optional[str] = None, repo_url: Optional[str] = None, collection_name: str = "project_knowledge"):
     """
-    Checks whether a repository has already been analysed and indexed.
-    Returns detailed telemetry if analysis was just completed.
+    Checks whether a source has already been analysed and indexed.
     """
-    indexed = agent.is_repo_indexed(collection_name, repo_url)
+    url = source_url or repo_url
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing source_url or repo_url")
+        
+    indexed = agent.is_indexed(collection_name, url)
     return {
-        "repo_url": repo_url, 
+        "source_url": url, 
         "indexed": indexed, 
         "collection": collection_name,
         "telemetry": agent.last_run_telemetry if indexed else {}
@@ -86,18 +102,25 @@ def list_user_sessions(user_id: str):
 
 
 @app.post("/analyze")
-def analyze_repository(request: ScanRequest, background_tasks: BackgroundTasks):
+def analyze_source(request: ScanRequest, background_tasks: BackgroundTasks):
     """
-    Triggers the full agentic repository scan:
-    Tree Fetch → LLM File Selection → Content Retrieval → Summarisation → Vector Indexing.
-    Runs as a background task to avoid blocking the server.
+    Triggers source analysis (GitHub, Jira, etc.)
+    Now includes link validation.
     """
+    url = request.url
+    if not url:
+        raise HTTPException(status_code=400, detail="source_url or repo_url is required.")
+
+    # Validate Link
+    if not agent.validate_source(url, request.source_type):
+        raise HTTPException(status_code=400, detail=f"Invalid or unreachable {request.source_type} link: {url}")
+
     background_tasks.add_task(
-        agent.analyze_repository, request.repo_url, request.collection_name
+        agent.analyze_source, url, request.source_type, request.collection_name
     )
     return {
         "status": "accepted",
-        "message": f"Analysis started for {request.repo_url}. Check /status to confirm indexing.",
+        "message": f"Analysis started for {url} ({request.source_type}). Check /status to confirm.",
         "collection": request.collection_name
     }
 
