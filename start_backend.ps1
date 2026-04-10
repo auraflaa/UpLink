@@ -74,7 +74,7 @@ function Start-Microservice {
         "-NoExit",
         "-Command",
         "& {",
-        "  $host.UI.RawUI.WindowTitle = '$ServiceName'; ",
+        "  `$host.UI.RawUI.WindowTitle = '$ServiceName'; ",
         "  Set-Location -Path '$BackendDir'; ",
         "  if (Test-Path 'venv\Scripts\activate.ps1') { . .\venv\Scripts\activate.ps1 } else { Write-Host 'WARNING: VENV NOT FOUND' -ForegroundColor Red }; ",
         "  Write-Host '--- $ServiceName ---' -ForegroundColor $Color; ",
