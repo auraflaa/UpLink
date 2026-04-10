@@ -1,73 +1,39 @@
-# React + TypeScript + Vite
+# UpLink – Student Growth & Project Assistant
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+UpLink is an AI-driven personal intelligence system for students that transforms scattered digital activity into actionable insights and automated execution. It understands your work, tracks your progress, and guides your next actions.
 
-Currently, two official plugins are available:
+## 🚀 Core Capabilities
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Data Aggregation**: Unified collection from GitHub, personal notes, and external events.
+- **Intelligent Processing**: Contextual understanding powered by RAG (Retrieval-Augmented Generation) and Vector Embeddings.
+- **Execution Layer**: Automated scheduling via Google Calendar and direct communication through Telegram.
 
-## React Compiler
+## 🏗️ System Architecture
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 1. Data Layer
+- **GitHub Analyser**: Extracts repository data and pushes embeddings to the vector database.
+- **Document Parser**: Processes resumes and personal documents.
 
-## Expanding the ESLint configuration
+### 2. AI & Storage Layer
+- **Qdrant DB (Vector Store)**: A high-performance Rust-based vector database hosted locally in Docker (Port `6366`).
+- **LLM Engine**: Central reasoning engine for progress insights and recommendations.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 3. Action Layer
+- **Scheduler**: Syncs with Google Calendar and triggers Telegram notifications.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 🛠️ Local Setup
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 1. Start Vector Database (Qdrant)
+```bash
+cd "UpLink/Backend/Qdrant DB"
+docker-compose up -d
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 2. Backend Setup
+```bash
+cd UpLink/Backend
+python -m venv venv
+# Windows
+.\venv\Scripts\activate
+pip install -r requirements.txt
 ```
