@@ -53,6 +53,11 @@ class ScanRequest(BaseModel):
     def url(self) -> str:
         return self.source_url or self.repo_url or ""
 
+class DualScanRequest(BaseModel):
+    github_url: Optional[str] = None
+    jira_url: Optional[str] = None
+    collection_name: str = "project_knowledge"
+
 class ChatRequest(BaseModel):
     query: str
     user_id: str
@@ -105,22 +110,67 @@ def list_user_sessions(user_id: str):
 def analyze_source(request: ScanRequest, background_tasks: BackgroundTasks):
     """
     Triggers source analysis (GitHub, Jira, etc.)
-    Now includes link validation.
+    Strictly restricted to one active analysis at a time.
     """
     url = request.url
     if not url:
         raise HTTPException(status_code=400, detail="source_url or repo_url is required.")
 
-    # Validate Link
+    # 1. Enforcement of "one analysis at a time" limitation (Type-aware)
+    if agent.is_analyzing(request.source_type):
+        raise HTTPException(
+            status_code=409, 
+            detail=f"The RAG Pipeline is currently busy analyzing another {request.source_type} source. Please wait for it to complete."
+        )
+
+    # 2. Validate Source Type & Link
+    if request.source_type not in ["github", "jira"]:
+        raise HTTPException(status_code=400, detail=f"Link not supported. The UpLink RAG Pipeline currently only supports GitHub and Jira sources.")
+
     if not agent.validate_source(url, request.source_type):
         raise HTTPException(status_code=400, detail=f"Invalid or unreachable {request.source_type} link: {url}")
 
+    # 3. Spawn background analysis
     background_tasks.add_task(
         agent.analyze_source, url, request.source_type, request.collection_name
     )
     return {
         "status": "accepted",
-        "message": f"Analysis started for {url} ({request.source_type}). Check /status to confirm.",
+        "message": f"Analysis started for {url} ({request.source_type}).",
+        "collection": request.collection_name
+    }
+
+
+@app.post("/analyze/dual")
+def analyze_dual_source(request: DualScanRequest, background_tasks: BackgroundTasks):
+    """
+    Simultaneously onboards a GitHub repo and a Jira link in parallel.
+    """
+    # 2. Validation & Spawning
+    triggered = []
+    
+    if request.github_url:
+        if not agent.validate_source(request.github_url, "github"):
+            raise HTTPException(status_code=400, detail=f"Invalid GitHub link: {request.github_url}")
+        if agent.is_analyzing("github"):
+            raise HTTPException(status_code=409, detail="Busy analyzing a GitHub source.")
+        background_tasks.add_task(agent.analyze_source, request.github_url, "github", request.collection_name)
+        triggered.append("github")
+
+    if request.jira_url:
+        if not agent.validate_source(request.jira_url, "jira"):
+            raise HTTPException(status_code=400, detail=f"Invalid Jira link: {request.jira_url}")
+        if agent.is_analyzing("jira"):
+            raise HTTPException(status_code=409, detail="Busy analyzing a Jira source.")
+        background_tasks.add_task(agent.analyze_source, request.jira_url, "jira", request.collection_name)
+        triggered.append("jira")
+
+    if not triggered:
+        raise HTTPException(status_code=400, detail="At least one link (github_url or jira_url) must be provided.")
+    
+    return {
+        "status": "accepted",
+        "message": f"Parallel analysis started for: {', '.join(triggered)}",
         "collection": request.collection_name
     }
 
