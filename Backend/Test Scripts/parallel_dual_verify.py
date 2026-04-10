@@ -32,10 +32,11 @@ def run_suite():
     time.sleep(0.5) # Give worker a moment to lock
     code2, res2 = trigger_analysis(JIRA_ISSUE, "jira")
 
-    if code1 == 202 and code2 == 202:
+    if code1 == 200 and code2 == 200:
         print("[OK] SUCCESS: Parallel analysis of different types is ENABLED.")
     else:
-        print(f"[!!] FAILED: Parallel ingestion rejected. Got ({code1}, {code2})")
+        print(f"[!!] FAILED: Parallel ingestion did not return OK. Got ({code1}, {code2})")
+
 
     # TEST 2: Type-Aware Concurrency Guard
     print("\n[TEST 2] Testing Type-Aware Locking (GitHub + GitHub)...")
