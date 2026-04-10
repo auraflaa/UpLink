@@ -14,12 +14,12 @@ def test_vdb():
         # 1. Check health
         health = requests.get(f"{BASE_URL}/healthz")
         health.raise_for_status()
-        print("✅ Qdrant service is HEALTHY.")
+        print("[SUCCESS] Qdrant service is HEALTHY.")
 
         # 2. Check collections
         col_res = requests.get(f"{BASE_URL}/collections")
         col_res.raise_for_status()
-        print(f"✅ Connection successful. Current collections: {col_res.json().get('result', {}).get('collections', [])}")
+        print(f"[SUCCESS] Connection successful. Current collections: {col_res.json().get('result', {}).get('collections', [])}")
 
         # 3. Create a temporary 'test' collection
         test_col = "connection_test"
@@ -57,20 +57,20 @@ def test_vdb():
         
         match = search_res.json().get("result", [])
         if match and match[0].get("id") == point_id:
-            print("✨ VDB FULL ROUND-TRIP SUCCESSFUL! Insertion and Search work.")
+            print("[SUCCESS] VDB FULL ROUND-TRIP SUCCESSFUL!")
         else:
-            print("❌ Search failed to find the test vector.")
+            print("[FAILURE] Search failed to find the test vector.")
 
         # 6. Cleanup
         print(f"[*] Cleaning up temporary collection '{test_col}'...")
         requests.delete(f"{BASE_URL}/collections/{test_col}")
-        print("✅ Cleanup complete.")
+        print("[SUCCESS] Cleanup complete.")
 
     except requests.exceptions.ConnectionError:
-        print("\n❌ CONNECTION ERROR: Could not reach Qdrant.")
+        print("\n[ERROR] CONNECTION ERROR: Could not reach Qdrant.")
         print("   Make sure Docker Desktop is RUNNING and you've run 'docker-compose up -d' in 'Backend/Qdrant DB'")
     except Exception as e:
-        print(f"\n❌ ERROR during test: {e}")
+        print(f"\n[ERROR] during test: {e}")
 
 if __name__ == "__main__":
     test_vdb()
