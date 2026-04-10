@@ -1,11 +1,29 @@
-requests
-numpy
-torch
-sentence-transformers>=2.3.1
+# ----------------------------------------
+# UpLink Backend Unified Dependencies
+# ----------------------------------------
+
+# API Core
 fastapi
 uvicorn
 pydantic
+python-dotenv
+requests
+python-multipart
+
+# Utilities & Database
 rich
 tinydb
-python-dotenv
+
+# RAG Intelligence
 google-generativeai
+
+# Embedding Service (Vectorization)
+torch
+numpy
+sentence-transformers>=2.3.1
+
+# Document Parser (Extraction API)
+opendataloader-pdf
+pypdf
+python-docx
+pandas

@@ -79,3 +79,8 @@ Frontend/.env.*.local
 *.njsproj
 *.sln
 *.sw?
+
+# Test / Dummy Files
+RESUME.pdf
+*resume*.pdf
+embedding_registry.json

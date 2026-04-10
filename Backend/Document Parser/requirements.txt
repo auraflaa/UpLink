@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-python-multipart
-opendataloader-pdf
-python-docx
-pandas
-requests
-python-dotenv
-pypdf
