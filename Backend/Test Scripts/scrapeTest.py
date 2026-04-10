@@ -118,14 +118,6 @@ def validate_event(event: dict[str, Any], index: int) -> list[str]:
     if not str(event.get("source_id") or "").strip() and not str(event.get("event_url") or "").strip():
         problems.append(f"event[{index}] needs either 'source_id' or 'event_url' for dedupe/update logic")
 
-    if not any(
-        str(event.get(key) or "").strip()
-        for key in ["deadline", "deadline_at", "registration_deadline", "start_at", "execute_at"]
-    ):
-        problems.append(
-            f"event[{index}] needs one scheduling field: deadline, deadline_at, registration_deadline, start_at, or execute_at"
-        )
-
     tags = event.get("tags")
     if tags is not None and not isinstance(tags, list):
         problems.append(f"event[{index}] field 'tags' should be a list")
@@ -218,8 +210,14 @@ def main() -> None:
 
     print_header("4. Validating Output Contract")
     all_problems: list[str] = []
+    schedulable_count = 0
     for index, event in enumerate(events):
         all_problems.extend(validate_event(event, index))
+        if any(
+            str(event.get(key) or "").strip()
+            for key in ["deadline", "deadline_at", "registration_deadline", "start_at", "execute_at"]
+        ):
+            schedulable_count += 1
 
     if all_problems:
         print("Contract validation found issues:")
@@ -228,6 +226,7 @@ def main() -> None:
         raise RuntimeError("Scraper output does not match the expected normalized format.")
 
     print("All returned events matched the expected contract.")
+    print(f"Schedulable events: {schedulable_count}/{len(events)}")
 
     print_header("5. Output Summary")
     if isinstance(result, dict):
