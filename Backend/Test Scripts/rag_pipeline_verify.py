@@ -25,7 +25,7 @@ def fmt(ms: float) -> str:
     return f"{ms/1000:.2f}s" if ms >= 1000 else f"{ms:.1f}ms"
 
 def run():
-    print("\n[🔬] RAG Pipeline — Full System Verification")
+    print("\n[VERIFY] RAG Pipeline - Full System Verification")
     if RUN_VIZ:
         print("     [--viz mode: diagram generation included]")
     print()
