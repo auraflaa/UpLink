@@ -40,6 +40,14 @@ def _as_list(value: Any, fallback: list[str] | None = None) -> list[str]:
     return [str(value).strip()]
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(slots=True)
 class NormalizedScheduleRequest:
     title: str
@@ -120,9 +128,25 @@ class EventNormalizer:
                 "timezone": payload.get("timezone"),
                 "calendar_id": payload.get("calendar_id"),
                 "calendar_event_id": payload.get("calendar_event_id"),
+                "calendar_summary": payload.get("calendar_summary"),
+                "calendar_description": payload.get("calendar_description"),
+                "calendar_visibility": payload.get("calendar_visibility"),
+                "calendar_status": payload.get("calendar_status"),
                 "attendees": payload.get("attendees") or [],
                 "meeting_link": payload.get("meeting_link"),
+                "create_meet_link": _as_bool(payload.get("create_meet_link")),
+                "recurrence": payload.get("recurrence") or [],
                 "default_duration_minutes": payload.get("default_duration_minutes"),
+                "jira_issue_id": payload.get("jira_issue_id"),
+                "jira_issue_key": payload.get("jira_issue_key"),
+                "jira_project_key": payload.get("jira_project_key"),
+                "jira_project_id": payload.get("jira_project_id"),
+                "jira_issue_type": payload.get("jira_issue_type"),
+                "jira_status": payload.get("jira_status"),
+                "jira_priority": payload.get("jira_priority"),
+                "jira_assignee": payload.get("jira_assignee"),
+                "jira_labels": payload.get("jira_labels") or [],
+                "jira_url": payload.get("jira_url"),
                 "user_id": payload.get("user_id"),
                 "app_user_id": payload.get("app_user_id"),
                 "owner_id": payload.get("owner_id"),
