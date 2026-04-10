@@ -43,9 +43,9 @@ Thumbs.db
 # Data & Credentials
 calendar_credentials.json
 Backend/**/data/*.json
-Backend/Mr\ UpLinker/*.json
-Backend/Mr\ UpLinker/commits.json
-!Backend/Mr\ UpLinker/server.py
+Backend/RAG\ Pipeline/*.json
+Backend/Scheduler/google_oauth.json
+Backend/Scheduler/*.token
 
 
 # Logs

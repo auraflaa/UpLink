@@ -4,3 +4,5 @@ fastapi
 uvicorn
 pydantic
 rich
+tinydb
+python-dotenv

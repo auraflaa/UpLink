@@ -11,7 +11,7 @@ To avoid conflicts during development, we have assigned the following fixed port
 | **Qdrant Vector DB** | `6366` | REST / HTTP | Primary API for Python requests |
 | **Qdrant Vector DB** | `6334` | gRPC | High-performance internal API |
 | **Embedding Server** | `6377` | REST / HTTP | Standalone REST API for `all-mpnet-base-v2` |
-| **Mr. UpLinker** | `6399` | REST / HTTP | [IN PROGRESS] AI Agentic Repository Brain |
+| **RAG Pipeline** | `6399` | REST / HTTP | [IN PROGRESS] AI Agentic Intelligence Engine |
 
 ## 🚀 Recent Accomplishments
 
@@ -26,7 +26,7 @@ To avoid conflicts during development, we have assigned the following fixed port
 
 - `/Qdrant DB`: Docker configuration for the official Rust DB.
 - `/Embedding Service`: Standalone FastAPI server for `all-mpnet-base-v2` embeddings (CUDA-first).
-- `/Mr UpLinker`: The "Brain" of UpLink (formerly GitHub Analyser). Handles agentic scans.
+- `/RAG Pipeline`: The "Brain" of UpLink. Handles agentic scans and knowledge management.
 - `/Document Parser`: Logic for analyzing resumes and project PDFs.
 - `/Test Scripts`: Centralized verification scripts for all services.
 
@@ -40,7 +40,7 @@ To avoid conflicts during development, we have assigned the following fixed port
 2. **Execution**:
    - Start DB: `cd "Qdrant DB" && docker-compose up -d`
    - Start Embedding Server: `python "Embedding Service/server.py"`
-   - Start Mr. UpLinker: `python "Mr UpLinker/server.py"`
+   - Start RAG Pipeline: `python "RAG Pipeline/server.py"`
 
 3. **Verification**:
    - Run Core Test: `python "Test Scripts/integration_test.py"`

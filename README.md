@@ -4,7 +4,7 @@ UpLink is an AI-driven personal intelligence system that transforms repository a
 
 ## 🚀 Core Capabilities
 
-- **Mr. UpLinker (Agentic RAG)**: A dedicated AI agent that performs deep scans of GitHub repositories, decides which files to prioritize, and creates summarized semantic knowledge.
+- **RAG Pipeline (Intelligence Engine)**: An agentic service that studies GitHub repositories and indexes them into vector knowledge.
 - **Microservice Intelligence**: Decoupled architecture with standalone Embedding and Vector DB services.
 - **Workflow Visualization**: LLM-generated Mermaid.js diagrams for project architecture and logic flows.
 - **Unified Action Layer**: Integration with Google Calendar and Telegram for automated scheduling.
@@ -15,7 +15,7 @@ UpLink is built as a distributed microservice system to ensure high performance 
 
 | Service | Port | Logic |
 | :--- | :--- | :--- |
-| **Mr. UpLinker** | `6399` | The "Brain": Agentic orchestration and RAG-Chat. |
+| **RAG Pipeline** | `6399` | The "Brain": Agentic orchestration and deep repository analysis. |
 | **Embedding Server** | `6377` | AI Inference: All-MPNet-Base-v2 (CUDA/CPU). |
 | **Vector DB (Qdrant)** | `6366` | Storage: Persistent Vector Database (Docker). |
 
@@ -41,8 +41,8 @@ pip install -r requirements.txt
 # Start Embedding Server
 python "Embedding Service/server.py"
 
-# Start the Brain (Mr. UpLinker)
-python "Mr UpLinker/server.py"
+# Start the Intelligence Engine (RAG Pipeline)
+python "RAG Pipeline/server.py"
 ```
 
 ### 🧪 Verification
