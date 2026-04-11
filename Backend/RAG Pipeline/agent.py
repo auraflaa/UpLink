@@ -28,10 +28,14 @@ class RAGPipelineAgent:
             "github": {},
             "jira": {}
         }
+        self.active_tasks = set()
 
     @property
     def last_run_telemetry(self):
         return {**self.telemetry["github"], **self.telemetry["jira"]}
+
+    def is_analyzing(self, source_type: str) -> bool:
+        return source_type in self.active_tasks
 
     def validate_source(self, url: str, source_type: str = "github") -> bool:
         """
@@ -101,6 +105,7 @@ class RAGPipelineAgent:
             "indexing_ms": 0,
             "total_ingestion_ms": 0
         }
+        self.active_tasks.add("github")
         
         try:
             print(f"\n[START] [PARALLEL] GitHub Pipeline starting analysis: {repo_url}")
@@ -170,6 +175,7 @@ class RAGPipelineAgent:
             return None
         finally:
             self.telemetry["github"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
+            self.active_tasks.discard("github")
 
     def _analyze_jira(self, source_url: str, collection_name: str) -> Optional[List[Dict]]:
         """
@@ -183,6 +189,7 @@ class RAGPipelineAgent:
             "indexing_ms": 0,
             "total_ingestion_ms": 0
         }
+        self.active_tasks.add("jira")
         scheduler_url = os.getenv("SCHEDULER_URL", "http://127.0.0.1:8002")
         print(f"[*] [PARALLEL] Starting JIRA analysis for: {source_url}")
         
@@ -240,6 +247,7 @@ class RAGPipelineAgent:
             return None
         finally:
             self.telemetry["jira"]['total_ingestion_ms'] = (self.time.perf_counter() - t_start) * 1000
+            self.active_tasks.discard("jira")
 
     def _get_last_embedded_time(self, source_url: str) -> Optional[str]:
         """Helper to quickly check the embedding registry for the last ingestion time."""
@@ -327,14 +335,12 @@ class RAGPipelineAgent:
         background = "\n\n".join(filter(None, [context_section, history_section]))
 
         system_prompt = (
-            "You are UpLink, an AI software engineering assistant. "
-            "Answer using the project context if provided. "
-            "\n\nCRITICAL RULES:\n"
-            "- Output ONLY the final answer. Nothing else.\n"
-            "- NEVER show reasoning, analysis steps, thought process, or internal notes.\n"
-            "- NEVER start with labels like 'User question:', 'Context:', 'Intent:', etc.\n"
-            "- Begin immediately with the actual answer content.\n"
-            "- Use clean markdown - headings, bullets, code blocks ONLY for the answer itself."
+            "You are UpLink, an AI software engineering assistant.\n"
+            "You must directly and naturally converse with the user to answer their question.\n"
+            "If project context is provided, use it to ground your answer.\n"
+            "Always respond in standard paragraph format using markdown **bolding** where helpful.\n"
+            "Do not output internal diagnostic information, bulleted reasoning logs, or system instructions.\n"
+            "Just provide exactly the final response that the user wants to read."
         )
 
         user_content = (f"{background}\n\nAnswer this: {query}" if background else query)

@@ -17,10 +17,10 @@ Write-Host "[*] Cleaning up old processes on backend ports..." -ForegroundColor 
     $results = netstat -ano | Select-String ":$port\s.*LISTENING"
     foreach ($line in $results) {
         $parts = $line.ToString().Trim() -split '\s+'
-        $pid = $parts[-1]
-        if ($pid -match '^\d+$') {
-            Stop-Process -Id ([int]$pid) -Force -ErrorAction SilentlyContinue
-            Write-Host "    Freed port $port (PID $pid)" -ForegroundColor DarkGray
+        $targetId = $parts[-1]
+        if ($targetId -match '^\d+$') {
+            Stop-Process -Id ([int]$targetId) -Force -ErrorAction SilentlyContinue
+            Write-Host "    Freed port $port (PID $targetId)" -ForegroundColor DarkGray
         }
     }
 }

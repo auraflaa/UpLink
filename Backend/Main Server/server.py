@@ -211,11 +211,20 @@ def _scrub_llm_reasoning(text: str) -> str:
         "however,", "but looking", "assuming", "let me", "i need to", "i should",
         "i'll", "i will", "first,", "step 1", "step 2", "step 3", "note:",
         "thinking:", "analysis:", "my analysis", "let's analyze",
+        "system instructions:", "constraint:", "user:", "user is asking", "the user is asking",
+        "since i don't have", "i must inform", "please provide the repository",
     )
     for line in lines:
         stripped = line.strip().lower()
+        if stripped.startswith("* "):
+            stripped_check = stripped[2:].strip()
+        elif stripped.startswith("- "):
+            stripped_check = stripped[2:].strip()
+        else:
+            stripped_check = stripped
+
         # Drop lines that are clearly internal reasoning
-        if any(stripped.startswith(p) for p in reasoning_prefixes):
+        if any(stripped_check.startswith(p) for p in reasoning_prefixes):
             continue
         clean.append(line)
 
@@ -602,8 +611,6 @@ def _build_ui_bootstrap(meta: RequestMeta) -> tuple[dict[str, Any], list[dict[st
     jobs, job_errors = _fetch_scheduler_jobs()
     home_resources = resources.get("home", {})
     user_label = "Builder"
-    if str(meta.user_id or "").strip() and str(meta.user_id or "").strip().lower() != "anonymous":
-        user_label = str(meta.user_id).strip()
 
     home_payload = {
         "welcome": {
@@ -1327,11 +1334,18 @@ def workspace_chat(envelope: ActionEnvelope) -> dict[str, Any]:
     else:
         workspace = _load_workspace(workspace_id) if workspace_id else None
         if not workspace:
-            return _response(
-                envelope.meta,
-                status="failed",
-                errors=[{"message": "workspace_id is missing or unknown.", "type": "validation"}],
-            )
+            if "/" in workspace_id or "://" in workspace_id:
+                # The frontend often sends raw paths (e.g. "RVITM/Bonzai") or raw URLs directly here 
+                # instead of hitting /analyze first to create the workspace UUID.
+                # Auto-resolve it into a tracked workspace so the RAG knows the correct collection.
+                github_url = f"https://github.com/{workspace_id}" if "://" not in workspace_id else workspace_id
+                workspace = _get_or_create_workspace(envelope.meta, {"github_url": github_url})
+            else:
+                return _response(
+                    envelope.meta,
+                    status="failed",
+                    errors=[{"message": f"workspace_id '{workspace_id}' is missing or unknown.", "type": "validation"}],
+                )
 
     query = str(envelope.payload.get("query") or "").strip()
     if not query:
@@ -1342,32 +1356,9 @@ def workspace_chat(envelope: ActionEnvelope) -> dict[str, Any]:
             errors=[{"message": "payload.query is required.", "type": "validation"}],
         )
 
-    # RAG is only skipped for pure default_chat (no workspace). 
-    # When a real workspace is linked, ALWAYS use RAG regardless of query length.
-    skip_rag = (workspace["workspace_id"] == "default_chat")
-
-    if skip_rag:
-        answer = _call_llm_direct(query)
-        if answer:
-            return _response(
-                envelope.meta,
-                status="ready",
-                workspace_id=workspace["workspace_id"],
-                data={
-                    "workspace_id": workspace["workspace_id"],
-                    "answer": answer,
-                    "sources": [],
-                    "telemetry": {"source": "main_server_native_llm"},
-                    "long_term_hits": 0,
-                },
-            )
-        # If LLM call failed, return a clear error instead of silently falling through
-        return _response(
-            envelope.meta,
-            status="failed",
-            workspace_id=workspace["workspace_id"],
-            errors=[{"message": "LLM service unavailable. Check GROQ_API_KEY or GOOGLE_API_KEY in .env.", "type": "llm_error"}],
-        )
+    # Always route to RAG Pipeline, mapping default_chat to the configured DEFAULT_COLLECTION
+    # This ensures consistent LLM formatting and vector context across all queries.
+    skip_rag = False
 
     try:
         rag_payload = _rag_post(
@@ -1390,7 +1381,7 @@ def workspace_chat(envelope: ActionEnvelope) -> dict[str, Any]:
             workspace_id=workspace["workspace_id"],
             data={
                 "workspace_id": workspace["workspace_id"],
-                "answer": rag_payload.get("answer", ""),
+                "answer": _scrub_llm_reasoning(rag_payload.get("answer", "")),
                 "sources": rag_payload.get("sources", []),
                 "telemetry": rag_payload.get("telemetry", {}),
                 "long_term_hits": rag_payload.get("long_term_hits", 0),
