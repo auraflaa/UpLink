@@ -24,6 +24,10 @@ export default defineConfig(({mode}) => {
         "Cross-Origin-Embedder-Policy": "unsafe-none"
       },
       proxy: {
+        '/api/main': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true
+        },
         '/api/scheduler': {
           target: 'http://127.0.0.1:8002',
           changeOrigin: true,
@@ -38,6 +42,11 @@ export default defineConfig(({mode}) => {
           target: 'http://127.0.0.1:6377',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/embeddings/, '')
+        },
+        '/api/documents': {
+          target: 'http://127.0.0.1:8004',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/documents/, '')
         }
       }
     },

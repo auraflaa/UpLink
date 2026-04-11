@@ -14,6 +14,7 @@ To ensure smooth IPC (Inter-Process Communication) and zero-conflict scaling, th
 | **Document Parser** | `8004` | REST / HTTP | **Extraction Gateway**: High-accuracy file parsing (PDF, DOCX, CSV, txt). Implements semantic chunking schemas before offloading data to the Embedding Server. |
 | **Scheduler** | `8002` | REST / HTTP | **Action Orchestration layer**: Task dispatch mechanism (CRON-style and event-driven). Connects data insights to external APIs (Telegram, Google Calendar). |
 | **Event Handler** | `8003` | REST / HTTP | **Normalization Gateway**: Funnel for third-party inbound Webhook traffic. Standardizes event payloads and routes them internally. |
+| **Main Server** | `8000` | REST / HTTP | **Product Gateway**: Additive frontend-facing orchestration layer for analyzer workflows, visualization packaging, and future unified product APIs. |
 
 ---
 
@@ -75,14 +76,12 @@ The repository adopts a strict centralized testing protocol to ensure microservi
    ```
 2. **Infrastructure Rollout**:
    ```powershell
-   # Start Vector Storage
-   cd "Qdrant DB" && docker-compose up -d
-
-   # Spin up Python Macro-Services
-   python "Embedding Service/server.py"
-   python "Document Parser/server.py"
-   python "RAG Pipeline/server.py"
+   # Run the unified backend bootstrap script from the project root
+   # This will automatically boot Qdrant, Main Server, Embedding service, RAG, and all other services gracefully.
+   ..\start_backend.ps1
    ```
+
+   *Note: If you are running the full stack including the frontend, just run `..\start_uplink.bat` instead.*
 
 3. **Master Verification Framework**:
    Detailed QA testing must be invoked when editing architecture routing rules. Located within `Test Scripts/`:

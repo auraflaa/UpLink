@@ -20,6 +20,11 @@ class GitHubScanner:
         self.headers = {"Accept": "application/vnd.github+json"}
         if self.token:
             self.headers["Authorization"] = f"token {self.token}"
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+        self.session.trust_env = os.getenv("UPLINK_TRUST_ENV_PROXY", "false").lower() == "true"
+        if not self.session.trust_env:
+            print("[*] GitHub scanner is ignoring inherited proxy settings.")
 
     def _resolve_token(self, token_input: Optional[str]) -> Optional[str]:
         """
@@ -56,7 +61,7 @@ class GitHubScanner:
         """Fetches the last pushed timestamp of the repository."""
         try:
             repo_path = self._parse_repo_path(repo_url)
-            res = requests.get(f"{self.base_url}/{repo_path}", headers=self.headers, timeout=10)
+            res = self.session.get(f"{self.base_url}/{repo_path}", timeout=10)
             if res.status_code == 200:
                 return res.json().get("pushed_at")
         except Exception as e:
@@ -73,7 +78,7 @@ class GitHubScanner:
         url = f"{self.base_url}/{repo_path}/git/trees/{branch}?recursive=1"
 
         print(f"[*] Fetching repository tree: {repo_path} (branch: {branch})")
-        res = requests.get(url, headers=self.headers)
+        res = self.session.get(url, timeout=20)
 
         if res.status_code == 404 and branch == "main":
             print("[!] Branch 'main' not found. Retrying with 'master'...")
@@ -104,7 +109,7 @@ class GitHubScanner:
         repo_path = self._parse_repo_path(repo_url)
         url = f"{self.base_url}/{repo_path}/contents/{file_path}"
 
-        res = requests.get(url, headers=self.headers)
+        res = self.session.get(url, timeout=20)
         if res.status_code == 200:
             data = res.json()
             if data.get("encoding") == "base64":

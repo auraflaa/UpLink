@@ -25,35 +25,27 @@ UpLink is built as a distributed microservice system to ensure high performance 
 | **Document Parser** | `8004` | Extractor: High-accuracy PDF (opendataloader), DOCX, CSV, TXT, MD semantic chunking. |
 | **Scheduler** | `8002` | Action Layer: Orchestrates tasks, reminders, and delivery (Telegram/Calendar). |
 | **Event Handler** | `8003` | Gateway: Normalizes and routes incoming events to the Scheduler. |
+| **Main Server** | `8000` | Frontend Bridge: Fast API router connecting UI to RAG logic and visualizations. |
 
 ---
 
-## 🛠️ Local Setup (Backend)
+## 🛠️ Local Setup
 
-### 1. Vector Database
-Ensure Docker Desktop is running.
+The easiest way to start the complete UpLink environment (both frontend and backend services) on Windows is using the unified master launcher:
+
 ```bash
-cd Backend/Qdrant\ DB
-docker-compose up -d
+# From the project root simply run:
+.\start_uplink.bat
 ```
 
-### 2. AI Intelligence Core
-Initialize the environment and start the models.
-```bash
-# Setup Environment
-cd Backend
-.\venv\Scripts\activate
-pip install -r requirements.txt
+**What this does automatically:**
+1. **Installs Requirements**: Syncs Python dependencies via `requirements.txt` and Node dependencies via `npm install`.
+2. **Starts Qdrant**: Boots the Docker-based Vector DB automatically.
+3. **Bootstraps the Backend**: Launches the `Embedding Server`, `Document Parser`, `RAG Pipeline`, `Scheduler`, `Event Handler`, and `Main Server` securely.
+4. **Starts the Frontend**: Spins up the React development environment.
 
-# Start Embedding Server
-python "Embedding Service/server.py"
-
-# Start Document Parser
-python "Document Parser/server.py"
-
-# Start the Intelligence Engine (RAG Pipeline)
-python "RAG Pipeline/server.py"
-```
+Your console will open two background windows logic contexts. 
+The Frontend responds on `http://localhost:3000` and the Backend acts on `http://127.0.0.1:8000`.
 
 ### 🧪 Verification & Maintenance
 1. **Performance Benchmark**: Stress test the pipeline and verify Gemini ingestion latencies:

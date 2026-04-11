@@ -43,15 +43,22 @@ class RAGPipelineAgent:
             github_pattern = r"^https?://github\.com/[\w\.-]+/[\w\.-]+/?$"
             if not re.match(github_pattern, url.strip()):
                 return False
-            
-            # 2. Reachability check (HEAD request)
+
+            # 2. Best-effort reachability check.
+            # Network restrictions, proxy behavior, or private repos can make a
+            # valid GitHub URL fail a HEAD request even though the downstream
+            # scanner can still handle it correctly.
             try:
-                # We use the scanner's token if available for better rate limits
                 headers = {"Authorization": f"token {os.getenv('GITHUB_TOKEN')}"} if os.getenv("GITHUB_TOKEN") else {}
                 res = requests.head(url.strip(), headers=headers, timeout=5, allow_redirects=True)
-                return res.status_code == 200
-            except:
-                return False
+                if res.status_code >= 500:
+                    print(f"[WARN] GitHub reachability check returned {res.status_code} for {url}. Proceeding anyway.")
+                elif res.status_code >= 400:
+                    print(f"[WARN] GitHub reachability check returned {res.status_code} for {url}. Proceeding with regex-only validation.")
+            except Exception as exc:
+                print(f"[WARN] GitHub reachability check failed for {url}: {exc}. Proceeding with regex-only validation.")
+
+            return True
         
         elif source_type == "jira":
             # Simple URL format check for Jira

@@ -1,0 +1,79 @@
+{
+  "home": {
+    "welcome_title": "Welcome back",
+    "welcome_subtitle": "Here is a live snapshot of your workspaces, reminders, and recent backend activity.",
+    "empty_recent_projects_title": "No recent workspaces yet",
+    "empty_recent_projects_body": "Connect a GitHub repository or Jira workspace to start building your project timeline.",
+    "recent_projects_button_label": "Refresh",
+    "modules": {
+      "documents": {
+        "title": "Document Analysis",
+        "description": "Upload resumes and process documents through the backend parser."
+      },
+      "analyzer": {
+        "title": "Repo Analyzer",
+        "description": "Review GitHub repositories and Jira workspaces with the main server bridge."
+      },
+      "events": {
+        "title": "Upcoming Events",
+        "description": "Follow deadlines, reminders, and registered opportunities from the scheduler."
+      }
+    }
+  },
+  "analyzer": {
+    "intro_title": "Link your workspace",
+    "intro_subtitle": "Paste a GitHub repository or Jira workspace link below to begin live analysis.",
+    "assistant_name": "Project Analyser",
+    "assistant_tagline": "AI Code and Task Assistant",
+    "visualizer_title": "Dynamic Visualiser",
+    "visualizer_subtitle": "Real-time project architecture flow",
+    "visualizer_caption": "Link a repository or board to generate a live architecture graph.",
+    "cards": [
+      {
+        "id": "dynamic_visualisation",
+        "title": "Dynamic Visualisation",
+        "description": "Live architecture graphs built from indexed workspace context.",
+        "icon_key": "visual"
+      },
+      {
+        "id": "jira_analyse",
+        "title": "Jira Analyse",
+        "description": "Inspect projects, tickets, and linked workflow context.",
+        "icon_key": "jira"
+      },
+      {
+        "id": "github_analyse",
+        "title": "GitHub Analyse",
+        "description": "Review repositories, code structure, and indexed files.",
+        "icon_key": "github"
+      },
+      {
+        "id": "project_improvements",
+        "title": "Project Improvements",
+        "description": "Surface grounded risks, recommendations, and next actions.",
+        "icon_key": "layers"
+      },
+      {
+        "id": "ai_chat",
+        "title": "AI Chat",
+        "description": "Ask follow-up questions against the current workspace context.",
+        "icon_key": "chat"
+      }
+    ],
+    "copy": {
+      "default_greeting": "Hello! I am your project assistant. Add a GitHub repository or Jira workspace and I will help analyze it.",
+      "linked_prefix": "I am ready to work with",
+      "linked_suffix": "What would you like me to do?",
+      "fallback_waiting": "The workspace analysis is still warming up. Ask again after indexing finishes for grounded answers."
+    }
+  },
+  "events": {
+    "title": "Events and Momentum",
+    "subtitle": "Track hackathons, submission windows, and reminders already scheduled in the backend.",
+    "empty_state_title": "No scheduled events yet",
+    "empty_state_body": "Once you register for an event or add a custom reminder, it will appear here automatically.",
+    "momentum_title": "Momentum Score",
+    "momentum_default_body": "Your score is now calculated from live reminders instead of placeholder values.",
+    "add_button_label": "Add Custom Event"
+  }
+}

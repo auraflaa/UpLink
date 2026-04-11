@@ -155,6 +155,12 @@ def get_status():
     }
 
 
+@app.get("/health")
+def get_health():
+    """Compatibility health alias for service probes expecting /health."""
+    return get_status()
+
+
 @app.post("/ingest")
 async def ingest_documents(
     files: List[UploadFile] = File(...),

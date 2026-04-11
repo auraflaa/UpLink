@@ -4,6 +4,69 @@ This document serves as the master contract for the UpLink Backend. It details t
 
 ---
 
+## 0. Main Server Gateway (`Port 8000`)
+An additive frontend-facing orchestration layer that wraps existing backend services without replacing them. In phase 1 it focuses on the analyzer workflow and produces a visualization package for the frontend.
+
+### Shared request envelope
+```json
+{
+  "meta": {
+    "action": "load_visualization",
+    "ui_surface": "repo_analyzer.visual_mode",
+    "request_id": "uuid",
+    "user_id": "user-123",
+    "workspace_id": "optional",
+    "source_kind": "github|jira|dual|document|event"
+  },
+  "payload": {}
+}
+```
+
+### Shared response envelope
+```json
+{
+  "meta": {
+    "action": "load_visualization",
+    "status": "ready",
+    "request_id": "uuid",
+    "workspace_id": "workspace-uuid"
+  },
+  "data": {},
+  "errors": []
+}
+```
+
+### `GET /health`
+**Functionality**: Lightweight liveness endpoint for the Main Server.
+
+### `GET /dependencies`
+**Functionality**: Reports upstream availability for the RAG pipeline and other relevant internal services.
+
+### `POST /api/main/v1/workspaces/analyze`
+**Functionality**: Accepts GitHub, Jira, or dual-source analyzer requests and creates or reuses a workspace record.
+
+### `POST /api/main/v1/ui/bootstrap`
+**Functionality**: Returns layout statistics, module definitions, and activity arrays to cleanly initialize the UI without hardcoded fallbacks.
+
+### `POST /api/main/v1/events/summary`
+**Functionality**: Returns centralized dashboard payloads for upcoming Hackathons, reminders, and user deadlines fetched directly from the Scheduler.
+
+### `POST /api/main/v1/workspaces/status`
+**Functionality**: Polls the current workspace readiness by querying upstream source index status.
+
+### `POST /api/main/v1/workspaces/visualization`
+**Functionality**: Returns a frontend-ready visualization package containing:
+- workspace status
+- source readiness
+- graph JSON
+- formatted markdown content
+- optional raw Mermaid output for fallback/debug
+
+### `POST /api/main/v1/workspaces/chat`
+**Functionality**: Routes analyzer chat requests through the existing RAG service using the workspace collection.
+
+---
+
 ## 1. RAG Intelligence Core (`Port 6399`)
 The central orchestrator for repository analysis, Jira ingestion, and semantic retrieval via Gemini 1.5.
 

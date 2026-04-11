@@ -2,6 +2,7 @@ import React, { useState, useCallback } from "react";
 import { motion } from "motion/react";
 import { UploadCloud, FileText, CheckCircle, X, AlertCircle } from "lucide-react";
 import { useToast } from "../components/ui/use-toast";
+import { auth } from "../lib/firebase";
 
 export default function ResumePage() {
   const [isDragging, setIsDragging] = useState(false);
@@ -28,6 +29,8 @@ export default function ResumePage() {
     setUploadComplete(false);
   };
 
+  const [uploadedFiles, setUploadedFiles] = useState<{name: string, size: number, date: string}[]>([]);
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -51,15 +54,37 @@ export default function ResumePage() {
     }
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!file) return;
     setIsUploading(true);
-    // Mock upload delay
-    setTimeout(() => {
-      setIsUploading(false);
+
+    const formData = new FormData();
+    formData.append("files", file);
+    formData.append("collection_name", `resume_${auth.currentUser?.uid || "anonymous"}`);
+    formData.append("source_label", "resume_upload");
+
+    try {
+      const response = await fetch("/api/documents/ingest", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to parse document");
+      }
+
+      setUploadedFiles(prev => [
+        { name: file.name, size: file.size, date: new Date().toLocaleDateString() },
+        ...prev
+      ]);
       setUploadComplete(true);
-      success("Document analyzed successfully.");
-    }, 2000);
+      setFile(null);
+      success("Document analyzed and embedded successfully.");
+    } catch (err) {
+      error("Error uploading document to backend parser.");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -183,16 +208,20 @@ export default function ResumePage() {
           <div className="bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-sm dark:shadow-none">
             <h3 className="text-lg font-semibold mb-4 text-neutral-900 dark:text-white">Recent Documents</h3>
             <div className="space-y-3">
-              {[1, 2].map((i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors cursor-pointer border border-transparent hover:border-neutral-200 dark:hover:border-neutral-700">
-                  <FileText className="w-5 h-5 text-neutral-400" />
-                  <div className="flex-1 overflow-hidden">
-                    <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">Software_Engineer_Resume_v{i}.pdf</p>
-                    <p className="text-xs text-neutral-500">Oct {12 + i}, 2025</p>
+              {uploadedFiles.length === 0 ? (
+                <p className="text-sm text-neutral-500">No documents processed yet in this session.</p>
+              ) : (
+                uploadedFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors cursor-pointer border border-transparent hover:border-neutral-200 dark:hover:border-neutral-700">
+                    <FileText className="w-5 h-5 text-neutral-400" />
+                    <div className="flex-1 overflow-hidden">
+                      <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">{f.name}</p>
+                      <p className="text-xs text-neutral-500">{f.date} • {(f.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                    <CheckCircle className="w-4 h-4 text-neutral-500" />
                   </div>
-                  <CheckCircle className="w-4 h-4 text-neutral-500" />
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>

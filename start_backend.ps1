@@ -1,6 +1,9 @@
 <#
 .SYNOPSIS
-Bootstraps and starts the entire UpLink Backend Services cluster.
+Bootstraps and starts the UpLink backend service cluster.
+
+.DESCRIPTION
+Bootstraps the backend cluster in hidden PowerShell background processes. All output is securely routed to the /logs/ directory to ensure a clean local workflow.
 #>
 
 $ErrorActionPreference = "Stop"
@@ -9,51 +12,71 @@ $BackendDir = Join-Path $ScriptDir "Backend"
 
 if (-not (Test-Path $BackendDir)) {
     Write-Host "[ERROR] Could not find the Backend directory at $BackendDir" -ForegroundColor Red
-    Exit 1
+    exit 1
 }
 
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host " Bootstrapping UpLink Backend Cluster..." -ForegroundColor Cyan
+Write-Host " Starting UpLink Backend Cluster..." -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 
 Push-Location $BackendDir
 
-# 1. Automated Python Environment Bootstrapping
 $VenvDir = Join-Path $BackendDir "venv"
 if (-not (Test-Path $VenvDir)) {
     Write-Host "[*] Virtual environment not found. Creating one now..." -ForegroundColor Yellow
     python -m venv venv
 }
 
-Write-Host "[*] Verifying dependencies from requirements.txt..." -ForegroundColor Yellow
-$ActivateScript = Join-Path $VenvDir "Scripts\activate.ps1"
-if (Test-Path $ActivateScript) {
-    # Run pip install in the current shell before spinning up the background tasks
-    & powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '$ActivateScript'; pip install -r requirements.txt; exit `$LASTEXITCODE }"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[!] Warning: Dependency installation may have failed." -ForegroundColor Red
-    } else {
-        Write-Host "[OK] Dependencies are fully synced." -ForegroundColor Green
-    }
-} else {
-    Write-Host "[!] Warning: Could not find venv activate script at $ActivateScript" -ForegroundColor Red
-}
-
-# 2. Start Vector Database (Qdrant)
-$QdrantDir = Join-Path $BackendDir "Qdrant DB"
-if (Test-Path $QdrantDir) {
-    Write-Host "[*] Spinning up Qdrant Vector DB (Docker)..." -ForegroundColor Yellow
-    Push-Location $QdrantDir
-    docker-compose up -d
+$PythonExe = Join-Path $VenvDir "Scripts\python.exe"
+if (-not (Test-Path $PythonExe)) {
+    Write-Host "[ERROR] Could not find Python executable at $PythonExe" -ForegroundColor Red
     Pop-Location
-} else {
-    Write-Host "[!] Skipping Qdrant DB: Directory not found." -ForegroundColor DarkGray
+    exit 1
 }
 
-Write-Host "[*] Giving Qdrant a moment to boot..." -ForegroundColor Yellow
-Start-Sleep -Seconds 3
+Write-Host "[*] Verifying Python dependencies..." -ForegroundColor Yellow
+& $PythonExe -m pip install -r requirements.txt
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[!] Warning: Dependency installation reported an error." -ForegroundColor Red
+} else {
+    Write-Host "[OK] Python dependencies are synced." -ForegroundColor Green
+}
 
-# 3. Helper function to launch Python services in new windows
+function Start-Qdrant {
+    param([string]$QdrantDir)
+
+    if (-not (Test-Path $QdrantDir)) {
+        Write-Host "[!] Skipping Qdrant DB: Directory not found." -ForegroundColor DarkGray
+        return
+    }
+
+    Write-Host "[*] Attempting to start Qdrant Vector DB..." -ForegroundColor Yellow
+    Push-Location $QdrantDir
+    try {
+        $DockerCompose = Get-Command docker-compose -ErrorAction SilentlyContinue
+        $Docker = Get-Command docker -ErrorAction SilentlyContinue
+
+        if ($DockerCompose) {
+            & $DockerCompose.Source up -d
+        } elseif ($Docker) {
+            & $Docker.Source compose up -d
+        } else {
+            Write-Host "[!] Docker is not available. Skipping Qdrant startup." -ForegroundColor DarkGray
+            return
+        }
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[OK] Qdrant startup command completed." -ForegroundColor Green
+        } else {
+            Write-Host "[!] Qdrant startup returned a non-zero exit code." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "[!] Qdrant startup failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    } finally {
+        Pop-Location
+    }
+}
+
 function Start-Microservice {
     param(
         [string]$ServiceName,
@@ -62,40 +85,65 @@ function Start-Microservice {
     )
 
     $FullPath = Join-Path $BackendDir $ScriptPath
-    
     if (-not (Test-Path $FullPath)) {
         Write-Host "[!] Skipping $ServiceName - Script not found at $FullPath" -ForegroundColor DarkGray
         return
     }
 
     Write-Host "[*] Starting $ServiceName..." -ForegroundColor $Color
-    
-    $Args = @(
-        "-NoExit",
-        "-Command",
-        "& {",
-        "  `$host.UI.RawUI.WindowTitle = '$ServiceName'; ",
-        "  Set-Location -Path '$BackendDir'; ",
-        "  if (Test-Path 'venv\Scripts\activate.ps1') { . .\venv\Scripts\activate.ps1 } else { Write-Host 'WARNING: VENV NOT FOUND' -ForegroundColor Red }; ",
-        "  Write-Host '--- $ServiceName ---' -ForegroundColor $Color; ",
-        "  python '$ScriptPath'",
+
+    $LogDir = Join-Path $BackendDir "logs"
+    if (-not (Test-Path $LogDir)) {
+        New-Item -ItemType Directory -Path $LogDir | Out-Null
+    }
+
+    $LogSlug = (($ServiceName -replace "[^A-Za-z0-9]+", "_").Trim("_")).ToLowerInvariant()
+    $StdOutLog = Join-Path $LogDir "$LogSlug.out.log"
+    $StdErrLog = Join-Path $LogDir "$LogSlug.err.log"
+
+    $Command = "& { " +
+        "`$host.ui.RawUI.WindowTitle = '$ServiceName'; " +
+        "Set-Location -LiteralPath '$BackendDir'; " +
+        "& '$PythonExe' '$FullPath' " +
         "}"
+
+    Start-Process powershell -ArgumentList @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-NoExit",
+        "-Command", $Command
     )
 
-    Start-Process powershell -ArgumentList $Args
+    Write-Host "    Started $ServiceName in a new terminal window." -ForegroundColor DarkGray
 }
 
-# 4. Launch Services
+$QdrantDir = Join-Path $BackendDir "Qdrant DB"
+Start-Qdrant -QdrantDir $QdrantDir
+
+Write-Host "[*] Giving infrastructure a moment to settle..." -ForegroundColor Yellow
+Start-Sleep -Seconds 3
+
 Start-Microservice -ServiceName "Embedding Service [Port 6377]" -ScriptPath "Embedding Service\server.py" -Color Magenta
+Start-Sleep -Seconds 1
 Start-Microservice -ServiceName "Document Parser [Port 8004]" -ScriptPath "Document Parser\server.py" -Color Green
+Start-Sleep -Seconds 1
+Start-Microservice -ServiceName "Scheduler [Port 8002]" -ScriptPath "Social Connector\scheduler.py" -Color DarkYellow
+Start-Sleep -Seconds 1
 Start-Microservice -ServiceName "Event Handler [Port 8003]" -ScriptPath "Event Handler\event.py" -Color Yellow
-Start-Microservice -ServiceName "RAG Pipeline (Brain) [Port 6399]" -ScriptPath "RAG Pipeline\server.py" -Color Cyan
+Start-Sleep -Seconds 1
+Start-Microservice -ServiceName "RAG Pipeline [Port 6399]" -ScriptPath "RAG Pipeline\server.py" -Color Cyan
+Start-Sleep -Seconds 1
+Start-Microservice -ServiceName "Main Server [Port 8000]" -ScriptPath "Main Server\server.py" -Color Blue
 
 Pop-Location
 
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host " All services disparched successfully." -ForegroundColor Cyan
-Write-Host " Keep the terminal windows open to monitor their logs." -ForegroundColor Green
-Write-Host " To shut everything down, just close all the Python windows." -ForegroundColor Green
+Write-Host " Backend services launched." -ForegroundColor Green
+Write-Host " Main Server:     http://127.0.0.1:8000" -ForegroundColor White
+Write-Host " Scheduler:       http://127.0.0.1:8002" -ForegroundColor White
+Write-Host " Event Handler:   http://127.0.0.1:8003" -ForegroundColor White
+Write-Host " Document Parser: http://127.0.0.1:8004" -ForegroundColor White
+Write-Host " RAG Pipeline:    http://127.0.0.1:6399" -ForegroundColor White
+Write-Host " Logs Directory:  $BackendDir\logs" -ForegroundColor White
 Write-Host "========================================================" -ForegroundColor Cyan

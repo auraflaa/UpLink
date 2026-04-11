@@ -66,6 +66,7 @@ class ChatRequest(BaseModel):
     source_url: Optional[str] = None
     repo_url: Optional[str] = None
     source_type: str = "github"
+    skip_rag: bool = False
 
     @property
     def url(self) -> str:
@@ -205,21 +206,29 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         )
         telemetry['memory_longterm_ms'] = (time.perf_counter() - t0) * 1000
 
-        # 5. Search project knowledge collection
-        t0 = time.perf_counter()
-        project_search_res = requests.post(
-            f"{QDRANT_URL}/collections/{request.collection_name}/points/search",
-            json={"vector": query_vector, "limit": 6, "with_payload": True},
-            timeout=2
-        )
-        project_search = project_search_res.json().get("result", [])
-        telemetry['vector_search_ms'] = (time.perf_counter() - t0) * 1000
+        # 5. Search project knowledge collection (IF NOT SKIPPED)
+        project_context = ""
+        project_search = []
+        if not request.skip_rag:
+            t0 = time.perf_counter()
+            project_search_res = requests.post(
+                f"{QDRANT_URL}/collections/{request.collection_name}/points/search",
+                json={"vector": query_vector, "limit": 6, "with_payload": True},
+                timeout=2
+            )
+            # Safe JSON extraction to prevent 404 crashes
+            try:
+                result_map = project_search_res.json()
+                project_search = result_map.get("result") or []
+            except Exception:
+                project_search = []
+            telemetry['vector_search_ms'] = (time.perf_counter() - t0) * 1000
 
-        # 6. Compile context from project knowledge
-        project_context = "\n\n".join([
-            f"Source: {r['payload'].get('filename', 'unknown')}\n{r['payload'].get('text', r['payload'].get('summary', ''))}"
-            for r in project_search
-        ])
+            # 6. Compile context from project knowledge
+            project_context = "\n\n".join([
+                f"Source: {r.get('payload', {}).get('filename', 'unknown')}\n{r.get('payload', {}).get('text', r.get('payload', {}).get('summary', ''))}"
+                for r in project_search
+            ])
 
         # 7. Append long-term memory hits as extra context
         if long_term_hits:
@@ -243,7 +252,7 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
         return {
             "answer": answer,
-            "sources": [r['payload'].get('filename') for r in project_search],
+            "sources": [r.get('payload', {}).get('filename') for r in project_search] if project_search else [],
             "session_id": request.session_id,
             "long_term_hits": len(long_term_hits),
             "telemetry": telemetry
