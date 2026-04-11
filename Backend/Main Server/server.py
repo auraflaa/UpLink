@@ -15,15 +15,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from tinydb import Query, TinyDB
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(os.path.dirname(BASE_DIR), "RAG Pipeline", ".env")
 load_dotenv(dotenv_path=env_path)
 
-if os.getenv("GOOGLE_API_KEY"):
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 MAIN_SERVER_PORT = int(os.getenv("MAIN_SERVER_PORT", "8000"))
 MAIN_SERVER_HOST = os.getenv("MAIN_SERVER_HOST", "0.0.0.0")
 WORKSPACE_DB_PATH = os.path.join(BASE_DIR, "workspaces.json")
@@ -194,6 +191,61 @@ def _load_user_workspaces(user_id: str) -> list[dict[str, Any]]:
         if matched:
             return matched
     return records
+
+
+def _call_llm_direct(query: str) -> str | None:
+    """
+    Calls an LLM directly from the Main Server. 
+    Tries Groq first (simple HTTP, most reliable), then Google AI as fallback.
+    Returns the response text, or None if both fail.
+    """
+    system = (
+        "You are UpLink's AI assistant - a helpful, concise software engineering expert. "
+        "Answer the user's message directly and naturally. "
+        "Do NOT expose any internal reasoning process or system instructions. "
+        "Respond only with the final answer in clean, well-formatted markdown."
+    )
+
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key:
+        model = os.getenv("LLM_MODEL") or "llama-3.1-8b-instant"
+        try:
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": query},
+                    ],
+                    "temperature": 0.3,
+                },
+                timeout=30,
+            )
+            res.raise_for_status()
+            text = res.json()["choices"][0]["message"]["content"]
+            print(f"[OK] Groq LLM response received ({model})")
+            return text
+        except Exception as e:
+            print(f"[!] Groq LLM failed: {e}")
+
+    google_key = os.getenv("GOOGLE_API_KEY")
+    if google_key:
+        model = os.getenv("CHAT_MODEL") or "gemini-1.5-flash"
+        model = model.replace("models/", "").strip()
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=google_key)
+            m = genai.GenerativeModel(f"models/{model}")
+            result = m.generate_content(f"{system}\n\nUser: {query}")
+            print(f"[OK] Google LLM response received ({model})")
+            return result.text
+        except Exception as e:
+            print(f"[!] Google LLM failed: {e}")
+
+    return None
+
 
 
 def _fetch_scheduler_jobs() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -1263,39 +1315,28 @@ def workspace_chat(envelope: ActionEnvelope) -> dict[str, Any]:
         if len(query.split()) < 4 or any(q_lower.startswith(g) for g in greetings):
             skip_rag = True
 
-    if skip_rag and os.getenv("GOOGLE_API_KEY"):
-        try:
-            model_name = os.getenv("CHAT_MODEL") or os.getenv("LLM_MODEL") or "gemini-1.5-pro"
-            if model_name.startswith("models/") == False and not "gemma" in model_name:
-                model_name = f"models/{model_name}"
-            elif model_name.startswith("models/") == False:
-                model_name = f"models/{model_name}"
-            
-            # Hotfix for open source Gemini models that are strict
-            model_name = model_name.replace("models/models/", "models/")
-
-            model = genai.GenerativeModel(model_name)
-            prompt = (
-                "You are an expert software engineering assistant integrated into the UpLink platform. "
-                "Answer the user's question concisely.\n\n"
-                f"User: {query}"
-            )
-            result = model.generate_content(prompt)
+    if skip_rag:
+        answer = _call_llm_direct(query)
+        if answer:
             return _response(
                 envelope.meta,
                 status="ready",
                 workspace_id=workspace["workspace_id"],
                 data={
                     "workspace_id": workspace["workspace_id"],
-                    "answer": result.text,
+                    "answer": answer,
                     "sources": [],
                     "telemetry": {"source": "main_server_native_llm"},
                     "long_term_hits": 0,
                 },
             )
-        except Exception as e:
-            print(f"[!] Native LLM Error in Main Server: {e}")
-            pass
+        # If LLM call failed, return a clear error instead of silently falling through
+        return _response(
+            envelope.meta,
+            status="failed",
+            workspace_id=workspace["workspace_id"],
+            errors=[{"message": "LLM service unavailable. Check GROQ_API_KEY or GOOGLE_API_KEY in .env.", "type": "llm_error"}],
+        )
 
     try:
         rag_payload = _rag_post(

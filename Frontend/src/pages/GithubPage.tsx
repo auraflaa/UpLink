@@ -563,28 +563,30 @@ export default function GithubPage() {
     setIsAnalyzing(true);
 
     try {
-      if (USE_MAIN_SERVER_ANALYZER) {
-        const activeWorkspaceId = workspaceId || (links.length > 0 ? "active_workspace" : "default_chat");
-        const response = await chatWorkspace({
-          workspaceId: activeWorkspaceId,
-          query,
-          sourceKind: currentSourceKind,
-          uiSurface: "repo_analyzer.chat_panel",
-        });
+      const activeWorkspaceId = workspaceId || (links.length > 0 ? "active_workspace" : "default_chat");
+      const response = await chatWorkspace({
+        workspaceId: activeWorkspaceId,
+        query,
+        sourceKind: currentSourceKind,
+        uiSurface: "repo_analyzer.chat_panel",
+      });
 
-        const answer =
-          String(response.data?.answer || "").trim() || buildFallbackReply(analyzerUi || {}, links);
+      const answer = String(response.data?.answer || "").trim();
+      if (answer) {
         setMessages([...nextMessages, { role: "assistant", content: answer }]);
+      } else if (response.errors?.length) {
+        const errMsg = String((response.errors[0] as any)?.message || "The server returned an error. Please try again.");
+        setMessages([...nextMessages, { role: "assistant", content: `❌ ${errMsg}` }]);
       } else {
-        setMessages([...nextMessages, { role: "assistant", content: buildFallbackReply(analyzerUi || {}, links) }]);
+        setMessages([...nextMessages, { role: "assistant", content: "I received an empty response. Please try again." }]);
       }
-    } catch (chatError) {
-      console.error("Chat failed, using fallback:", chatError);
+    } catch (chatError: any) {
+      console.error("Chat API call failed:", chatError);
       setMessages([
         ...nextMessages,
         {
           role: "assistant",
-          content: buildFallbackReply(analyzerUi || {}, links),
+          content: `❌ Could not reach the UpLink backend. Make sure all servers are running.\n\n\`${String(chatError?.message || chatError)}\``,
         },
       ]);
     } finally {

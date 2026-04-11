@@ -41,13 +41,38 @@ export default function HomePage() {
     };
   }, []);
 
-  if (isLoading || !homeData) {
+  if (isLoading && !homeData) {
     return (
       <div className="flex justify-center items-center h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-neutral-900 dark:border-white"></div>
       </div>
     );
   }
+
+  const fallbackHome = {
+    welcome: { title: "Welcome back", subtitle: "Here is a live snapshot of your workspace activity." },
+    stats: [
+      { label: "Workspaces", value: "—", trend: "—", icon_key: "github" },
+      { label: "Documents", value: "—", trend: "—", icon_key: "file_text" },
+      { label: "Events", value: "—", trend: "—", icon_key: "calendar" },
+      { label: "Activity", value: "—", trend: "—", icon_key: "trending_up" },
+    ],
+    activity: [
+      { day: "Mon", value: 0, count: 0 }, { day: "Tue", value: 0, count: 0 },
+      { day: "Wed", value: 0, count: 0 }, { day: "Thu", value: 0, count: 0 },
+      { day: "Fri", value: 0, count: 0 }, { day: "Sat", value: 0, count: 0 },
+      { day: "Sun", value: 0, count: 0 },
+    ],
+    recent_projects: [],
+    modules: {
+      documents: { title: "Document Analysis", description: "Upload resumes and get AI-driven improvements for your profile." },
+      analyzer: { title: "Repo Analyzer", description: "Review codebases, get architectural insights, and optimize logic." },
+      events: { title: "Upcoming Events", description: "Do not miss out on hackathons and work opportunities." },
+    },
+    empty_state: { title: "No recent workspaces yet", body: "Connect a GitHub repo or Jira board to begin.", button_label: "Refresh" },
+  };
+
+  const data = homeData || fallbackHome;
 
   const statIconMap: Record<string, any> = {
     trending_up: TrendingUp,
@@ -56,17 +81,17 @@ export default function HomePage() {
     calendar: Calendar,
   };
 
-  const stats = homeData.stats;
-  const activityData = homeData.activity;
-  const recentProjects = homeData.recent_projects;
+  const stats = data.stats;
+  const activityData = data.activity;
+  const recentProjects = data.recent_projects;
 
   return (
     <div className="pb-10">
       <header className="mb-8">
         <h1 className="text-4xl font-bold mb-3 text-neutral-900 dark:text-white bg-clip-text text-transparent bg-gradient-to-r from-neutral-600 to-neutral-500 dark:from-neutral-400 dark:to-neutral-400">
-          {homeData.welcome.title}
+          {data.welcome.title}
         </h1>
-        <p className="text-neutral-600 dark:text-neutral-400 text-lg">{homeData.welcome.subtitle}</p>
+        <p className="text-neutral-600 dark:text-neutral-400 text-lg">{data.welcome.subtitle}</p>
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -112,10 +137,10 @@ export default function HomePage() {
                   <FileText className="w-6 h-6" />
                 </div>
                 <h3 className="text-xl font-semibold mb-2 text-neutral-900 dark:text-white">
-                  {homeData.modules?.documents?.title || "Document Analysis"}
+                  {data.modules?.documents?.title || "Document Analysis"}
                 </h3>
                 <p className="text-neutral-600 dark:text-neutral-400 text-sm mb-6">
-                  {homeData.modules?.documents?.description || "Upload resumes and get AI-driven improvements for your profile."}
+                  {data.modules?.documents?.description || "Upload resumes and get AI-driven improvements for your profile."}
                 </p>
               </div>
               <div className="flex items-center text-sm font-medium text-neutral-600 dark:text-neutral-400 group-hover:translate-x-1 transition-transform">
@@ -135,10 +160,10 @@ export default function HomePage() {
                   <Github className="w-6 h-6" />
                 </div>
                 <h3 className="text-xl font-semibold mb-2 text-neutral-900 dark:text-white">
-                  {homeData.modules?.analyzer?.title || "Repo Analyzer"}
+                  {data.modules?.analyzer?.title || "Repo Analyzer"}
                 </h3>
                 <p className="text-neutral-600 dark:text-neutral-400 text-sm mb-6">
-                  {homeData.modules?.analyzer?.description || "Review codebases, get architectural insights, and optimize logic."}
+                  {data.modules?.analyzer?.description || "Review codebases, get architectural insights, and optimize logic."}
                 </p>
               </div>
               <div className="flex items-center text-sm font-medium text-neutral-600 dark:text-neutral-400 group-hover:translate-x-1 transition-transform">
@@ -164,10 +189,10 @@ export default function HomePage() {
                 </div>
                 <div>
                   <h3 className="text-2xl font-bold text-white mb-1">
-                    {homeData.modules?.events?.title || "Upcoming Events"}
+                    {data.modules?.events?.title || "Upcoming Events"}
                   </h3>
                   <p className="text-neutral-400 text-sm">
-                    {homeData.modules?.events?.description || "Do not miss out on hackathons and work opportunities."}
+                    {data.modules?.events?.description || "Do not miss out on hackathons and work opportunities."}
                   </p>
                 </div>
               </div>
@@ -228,7 +253,7 @@ export default function HomePage() {
             <p className="text-neutral-500 dark:text-neutral-400 text-sm">Pick up right where you left off</p>
           </div>
           <button className="text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors">
-            {homeData.empty_state.button_label}
+            {data.empty_state.button_label}
           </button>
         </div>
 
@@ -270,8 +295,8 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="bg-white dark:bg-neutral-900/40 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">{homeData.empty_state.title}</h3>
-            <p className="text-neutral-500 dark:text-neutral-400 text-sm">{homeData.empty_state.body}</p>
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">{data.empty_state.title}</h3>
+            <p className="text-neutral-500 dark:text-neutral-400 text-sm">{data.empty_state.body}</p>
           </div>
         )}
       </motion.div>

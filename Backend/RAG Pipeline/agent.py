@@ -313,29 +313,35 @@ class RAGPipelineAgent:
     #  PHASE 2 — RAG Chat                                                  #
     # ------------------------------------------------------------------ #
 
-    def chat_with_context(self, query: str, project_context: str, conversation_history: List[Dict]) -> Optional[str]:
+    def chat_with_context(self, query: str, project_context: str, conversation_history: list) -> str | None:
         """
         Generates a grounded LLM response using project knowledge and session history.
+        Output-only: never exposes reasoning or system text.
         """
         history_text = "\n".join([
-            f"{m['role'].capitalize()}: {m['content']}" for m in conversation_history
+            f"{m['role'].capitalize()}: {m['content']}" for m in (conversation_history or [])[-6:]
         ])
 
+        context_section = f"Project context:\n{project_context.strip()}" if project_context.strip() else ""
+        history_section = f"Recent conversation:\n{history_text}" if history_text else ""
+        background = "\n\n".join(filter(None, [context_section, history_section]))
+
         system_prompt = (
-            "You are an expert software engineering assistant integrated into the UpLink platform. "
-            "Answer the user's question using the provided project knowledge and conversation history. "
-            "Be concise and technically precise. If the context is insufficient, say so clearly.\n\n"
-            f"### Project Knowledge:\n{project_context}\n\n"
-            f"### Recent Conversation:\n{history_text}"
+            "You are UpLink's AI assistant - a helpful, concise software engineering expert. "
+            "Answer the user's question directly and naturally. "
+            "Do NOT output your reasoning process, internal notes, or any system-level text. "
+            "Respond ONLY with the final answer in clean markdown."
         )
+
+        user_content = f"{background}\n\nUser question: {query}" if background else f"User question: {query}"
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query}
+            {"role": "user", "content": user_content}
         ]
 
-        # Use the Pro model for reasoning during RAG chat
         return self.llm.chat_completion(messages, model_type="chat")
+
 
     def is_indexed(self, collection_name: str, source_url: str) -> bool:
         """Checks if a source already has indexed summaries in Qdrant."""
