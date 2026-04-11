@@ -563,7 +563,11 @@ export default function GithubPage() {
     setIsAnalyzing(true);
 
     try {
-      const activeWorkspaceId = workspaceId || (links.length > 0 ? "active_workspace" : "default_chat");
+      // Routing is purely based on whether links are present:
+      // - No links → "default_chat" → backend calls LLM directly
+      // - Links present + workspace analyzed → real workspaceId → RAG pipeline
+      // - Links present but not yet analyzed → still "default_chat" until analyze completes
+      const activeWorkspaceId = (links.length > 0 && workspaceId) ? workspaceId : "default_chat";
       const response = await chatWorkspace({
         workspaceId: activeWorkspaceId,
         query,
@@ -854,26 +858,32 @@ export default function GithubPage() {
                         : "bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200 shadow-sm"
                     }`}
                   >
-                    <div className="leading-relaxed text-[15px] space-y-3 break-words text-neutral-800 dark:text-neutral-200">
-                      <ReactMarkdown 
+                    <div className={`leading-relaxed text-[15px] break-words ${message.role === "user" ? "text-white dark:text-neutral-900" : "text-neutral-800 dark:text-neutral-200"}`}>
+                      <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
-                          p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
-                          ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-2 space-y-1" {...props} />,
-                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-2 space-y-1" {...props} />,
-                          li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                          h1: ({node, ...props}) => <h1 className="text-xl font-bold text-neutral-900 dark:text-white mt-4 mb-2 first:mt-0" {...props} />,
+                          h2: ({node, ...props}) => <h2 className="text-lg font-semibold text-neutral-900 dark:text-white mt-3 mb-2 first:mt-0" {...props} />,
+                          h3: ({node, ...props}) => <h3 className="text-base font-semibold text-neutral-800 dark:text-neutral-100 mt-3 mb-1 first:mt-0" {...props} />,
+                          p: ({node, ...props}) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
+                          ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1.5" {...props} />,
+                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1.5" {...props} />,
+                          li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
                           strong: ({node, ...props}) => <strong className="font-semibold text-neutral-900 dark:text-white" {...props} />,
-                          a: ({node, ...props}) => <a className="text-pink-500 hover:text-pink-400 underline underline-offset-2" {...props} />,
+                          em: ({node, ...props}) => <em className="italic text-neutral-700 dark:text-neutral-300" {...props} />,
+                          a: ({node, ...props}) => <a className="text-blue-500 dark:text-blue-400 hover:underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...props} />,
+                          blockquote: ({node, ...props}) => (
+                            <blockquote className="border-l-4 border-neutral-400 dark:border-neutral-600 pl-4 my-3 text-neutral-600 dark:text-neutral-400 italic" {...props} />
+                          ),
+                          hr: ({node, ...props}) => <hr className="my-4 border-neutral-200 dark:border-neutral-700" {...props} />,
+                          pre: ({node, ...props}) => <pre className="my-3 bg-[#1a1a1a] border border-neutral-700 overflow-x-auto rounded-xl p-4 shadow-inner" {...props} />,
                           code: ({node, inline, className, children, ...props}: any) => {
-                            const match = /language-(\w+)/.exec(className || '')
                             return !inline ? (
-                              <div className="my-3 bg-[#1e1e1e] border border-neutral-800 overflow-x-auto rounded-xl p-4 shadow-inner">
-                                <code className="text-sm font-mono text-neutral-200 whitespace-pre" {...props}>
-                                  {children}
-                                </code>
-                              </div>
+                              <code className="text-sm font-mono text-emerald-300 whitespace-pre block" {...props}>
+                                {children}
+                              </code>
                             ) : (
-                              <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 text-pink-600 dark:text-pink-400 font-mono text-[13px] border border-neutral-200 dark:border-neutral-700" {...props}>
+                              <code className="px-1.5 py-0.5 mx-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-pink-600 dark:text-pink-400 font-mono text-[13px]" {...props}>
                                 {children}
                               </code>
                             )
@@ -938,7 +948,7 @@ export default function GithubPage() {
               )}
 
               {showRepoInput ? (
-                <form onSubmit={handleSetRepoInside} className="relative flex items-center gap-2 bg-white dark:bg-neutral-900 border border-neutral-500 rounded-2xl p-2 shadow-sm transition-all ring-2 ring-neutral-500/20">
+                <form onSubmit={handleSetRepoInside} className="relative flex items-center gap-2 bg-neutral-100 dark:bg-neutral-900 border border-neutral-500 rounded-2xl p-2 shadow-sm transition-all ring-2 ring-neutral-500/20">
                   <div className="p-3 text-neutral-600 dark:text-neutral-400 shrink-0 relative w-11 h-11 flex items-center justify-center">
                     <AnimatePresence mode="wait">
                       <motion.div
@@ -977,7 +987,7 @@ export default function GithubPage() {
                   </button>
                 </form>
               ) : (
-                <form onSubmit={handleSend} className="relative flex items-end gap-2 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-neutral-500/50 focus-within:border-neutral-500 transition-all">
+                <form onSubmit={handleSend} className="relative flex items-end gap-2 bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-neutral-500/50 focus-within:border-neutral-500 transition-all">
                   <button
                     type="button"
                     onClick={() => setShowRepoInput(true)}

@@ -10,6 +10,22 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BackendDir = Join-Path $ScriptDir "Backend"
 
+# --- Kill any existing processes on backend ports ---
+Write-Host "[*] Cleaning up old processes on backend ports..." -ForegroundColor Yellow
+@(8000, 8002, 8003, 8004, 6399, 6377) | ForEach-Object {
+    $port = $_
+    $results = netstat -ano | Select-String ":$port\s.*LISTENING"
+    foreach ($line in $results) {
+        $parts = $line.ToString().Trim() -split '\s+'
+        $pid = $parts[-1]
+        if ($pid -match '^\d+$') {
+            Stop-Process -Id ([int]$pid) -Force -ErrorAction SilentlyContinue
+            Write-Host "    Freed port $port (PID $pid)" -ForegroundColor DarkGray
+        }
+    }
+}
+Start-Sleep -Seconds 1
+
 if (-not (Test-Path $BackendDir)) {
     Write-Host "[ERROR] Could not find the Backend directory at $BackendDir" -ForegroundColor Red
     exit 1

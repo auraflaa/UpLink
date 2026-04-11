@@ -327,13 +327,17 @@ class RAGPipelineAgent:
         background = "\n\n".join(filter(None, [context_section, history_section]))
 
         system_prompt = (
-            "You are UpLink's AI assistant - a helpful, concise software engineering expert. "
-            "Answer the user's question directly and naturally. "
-            "Do NOT output your reasoning process, internal notes, or any system-level text. "
-            "Respond ONLY with the final answer in clean markdown."
+            "You are UpLink, an AI software engineering assistant. "
+            "Answer using the project context if provided. "
+            "\n\nCRITICAL RULES:\n"
+            "- Output ONLY the final answer. Nothing else.\n"
+            "- NEVER show reasoning, analysis steps, thought process, or internal notes.\n"
+            "- NEVER start with labels like 'User question:', 'Context:', 'Intent:', etc.\n"
+            "- Begin immediately with the actual answer content.\n"
+            "- Use clean markdown - headings, bullets, code blocks ONLY for the answer itself."
         )
 
-        user_content = f"{background}\n\nUser question: {query}" if background else f"User question: {query}"
+        user_content = (f"{background}\n\nAnswer this: {query}" if background else query)
 
         messages = [
             {"role": "system", "content": system_prompt},

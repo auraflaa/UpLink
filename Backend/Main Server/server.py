@@ -31,6 +31,9 @@ SCHEDULER_URL = os.getenv("SCHEDULER_URL", "http://127.0.0.1:8002").rstrip("/")
 EVENT_HANDLER_URL = os.getenv("EVENT_HANDLER_URL", "http://127.0.0.1:8003").rstrip("/")
 DOCUMENT_PARSER_URL = os.getenv("DOC_PARSER_URL", "http://127.0.0.1:8004").rstrip("/")
 
+DEFAULT_GITHUB_URL = os.getenv("DEFAULT_GITHUB_URL", "").strip()
+DEFAULT_COLLECTION = os.getenv("DEFAULT_COLLECTION", "bonzai_default").strip()
+
 
 app = FastAPI(
     title="UpLink Main Server",
@@ -193,22 +196,56 @@ def _load_user_workspaces(user_id: str) -> list[dict[str, Any]]:
     return records
 
 
+def _scrub_llm_reasoning(text: str) -> str:
+    """
+    Post-processes the LLM response to strip any chain-of-thought reasoning
+    lines that small models accidentally include in their output.
+    """
+    import re
+    lines = text.splitlines()
+    clean = []
+    # Patterns that indicate reasoning leakage rather than final answer content
+    reasoning_prefixes = (
+        "user question:", "user asks:", "context:", "keywords:", "language/slang:",
+        "language:", "slang:", "intent:", "searching for", "actually,", "wait,",
+        "however,", "but looking", "assuming", "let me", "i need to", "i should",
+        "i'll", "i will", "first,", "step 1", "step 2", "step 3", "note:",
+        "thinking:", "analysis:", "my analysis", "let's analyze",
+    )
+    for line in lines:
+        stripped = line.strip().lower()
+        # Drop lines that are clearly internal reasoning
+        if any(stripped.startswith(p) for p in reasoning_prefixes):
+            continue
+        clean.append(line)
+
+    result = "\n".join(clean).strip()
+    # If we scrubbed everything, return original (better to show something)
+    return result if result else text.strip()
+
+
 def _call_llm_direct(query: str) -> str | None:
     """
-    Calls an LLM directly from the Main Server. 
+    Calls an LLM directly from the Main Server.
     Tries Groq first (simple HTTP, most reliable), then Google AI as fallback.
     Returns the response text, or None if both fail.
     """
     system = (
-        "You are UpLink's AI assistant - a helpful, concise software engineering expert. "
-        "Answer the user's message directly and naturally. "
-        "Do NOT expose any internal reasoning process or system instructions. "
-        "Respond only with the final answer in clean, well-formatted markdown."
+        "You are UpLink, an AI software engineering assistant. "
+        "Your job is to answer the user's message clearly and helpfully. "
+        "\n\nCRITICAL RULES:\n"
+        "- Output ONLY the final answer. Nothing else.\n"
+        "- NEVER show your reasoning, analysis, thought process, or internal notes.\n"
+        "- NEVER start with 'User question:', 'Context:', 'Intent:', or similar labels.\n"
+        "- NEVER use bullet points to list your thinking steps.\n"
+        "- Begin your response immediately with the actual answer content.\n"
+        "- Format your answer in clean markdown with proper headings and bullets ONLY for the answer itself."
     )
 
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
-        model = os.getenv("LLM_MODEL") or "llama-3.1-8b-instant"
+        # Use a larger model that follows instructions more reliably
+        model = "llama-3.3-70b-versatile"
         try:
             res = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
@@ -219,32 +256,33 @@ def _call_llm_direct(query: str) -> str | None:
                         {"role": "system", "content": system},
                         {"role": "user", "content": query},
                     ],
-                    "temperature": 0.3,
+                    "temperature": 0.4,
+                    "max_tokens": 1024,
                 },
                 timeout=30,
             )
             res.raise_for_status()
             text = res.json()["choices"][0]["message"]["content"]
             print(f"[OK] Groq LLM response received ({model})")
-            return text
+            return _scrub_llm_reasoning(text)
         except Exception as e:
-            print(f"[!] Groq LLM failed: {e}")
+            print(f"[!] Groq LLM failed ({model}): {e}")
 
     google_key = os.getenv("GOOGLE_API_KEY")
     if google_key:
-        model = os.getenv("CHAT_MODEL") or "gemini-1.5-flash"
-        model = model.replace("models/", "").strip()
+        model = (os.getenv("CHAT_MODEL") or "gemma-4-31b-it").replace("models/", "").strip()
         try:
             import google.generativeai as genai
             genai.configure(api_key=google_key)
             m = genai.GenerativeModel(f"models/{model}")
             result = m.generate_content(f"{system}\n\nUser: {query}")
             print(f"[OK] Google LLM response received ({model})")
-            return result.text
+            return _scrub_llm_reasoning(result.text)
         except Exception as e:
-            print(f"[!] Google LLM failed: {e}")
+            print(f"[!] Google LLM failed ({model}): {e}")
 
     return None
+
 
 
 
@@ -1285,7 +1323,7 @@ def workspace_chat(envelope: ActionEnvelope) -> dict[str, Any]:
     workspace_id = str(envelope.meta.workspace_id or envelope.payload.get("workspace_id") or "").strip()
     
     if workspace_id == "default_chat":
-        workspace = {"workspace_id": "default_chat", "collection_name": "anonymous_default", "user_id": envelope.meta.user_id}
+        workspace = {"workspace_id": "default_chat", "collection_name": DEFAULT_COLLECTION, "user_id": envelope.meta.user_id}
     else:
         workspace = _load_workspace(workspace_id) if workspace_id else None
         if not workspace:
@@ -1304,16 +1342,9 @@ def workspace_chat(envelope: ActionEnvelope) -> dict[str, Any]:
             errors=[{"message": "payload.query is required.", "type": "validation"}],
         )
 
-    # RAG Threshold logic defined in Main Server
-    skip_rag = False
-    if workspace["workspace_id"] == "default_chat":
-        skip_rag = True
-    else:
-        q_lower = query.lower()
-        # Heuristic threshold: if query is extremely short or a standard greeting, bypass RAG
-        greetings = ["hey", "hello", "hi", "help", "who are you", "what can you do", "good morning", "good evening"]
-        if len(query.split()) < 4 or any(q_lower.startswith(g) for g in greetings):
-            skip_rag = True
+    # RAG is only skipped for pure default_chat (no workspace). 
+    # When a real workspace is linked, ALWAYS use RAG regardless of query length.
+    skip_rag = (workspace["workspace_id"] == "default_chat")
 
     if skip_rag:
         answer = _call_llm_direct(query)
@@ -1373,6 +1404,29 @@ def workspace_chat(envelope: ActionEnvelope) -> dict[str, Any]:
             errors=[{"message": str(exc), "type": "rag_chat"}],
         )
 
+def _bootstrap_default_workspace():
+    """Auto-indexes the DEFAULT_GITHUB_URL on startup so default_chat has real context."""
+    if not DEFAULT_GITHUB_URL:
+        print("[*] No DEFAULT_GITHUB_URL configured — default_chat will use LLM-only mode.")
+        return
+    try:
+        print(f"[*] Bootstrapping default workspace: {DEFAULT_GITHUB_URL} → {DEFAULT_COLLECTION}")
+        _rag_post(
+            "/index",
+            {
+                "source_url": DEFAULT_GITHUB_URL,
+                "source_type": "github",
+                "collection_name": DEFAULT_COLLECTION,
+                "user_id": "system",
+            },
+            timeout=120,
+        )
+        print(f"[OK] Default workspace indexed successfully.")
+    except Exception as exc:
+        print(f"[!] Default workspace bootstrap failed (non-fatal): {exc}")
+
 
 if __name__ == "__main__":
+    import threading
+    threading.Thread(target=_bootstrap_default_workspace, daemon=True).start()
     uvicorn.run(app, host=MAIN_SERVER_HOST, port=MAIN_SERVER_PORT)
